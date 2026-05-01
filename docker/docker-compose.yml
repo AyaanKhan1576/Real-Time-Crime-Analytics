@@ -1,0 +1,71 @@
+version: '3.8'
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+
+  postgres:
+    image: postgres:14
+    environment:
+      POSTGRES_DB: crime_analytics
+      POSTGRES_USER: crime_user
+      POSTGRES_PASSWORD: crime_password
+    volumes:
+      - ./db:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+
+  mongo:
+    image: mongo:6
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  storm-harness:
+    image: python:3.10
+    depends_on:
+      - kafka
+      - postgres
+      - mongo
+    working_dir: /app
+    volumes:
+      - ./:/app:ro
+      - harness_logs:/app/logs
+    environment:
+      PYTHONUNBUFFERED: 1
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: crime_user
+      POSTGRES_PASSWORD: crime_password
+      POSTGRES_DB: crime_analytics
+      MONGODB_HOST: mongo
+      MONGODB_PORT: 27017
+      MONGODB_DB: crime_analytics
+    command: >
+      bash -c "
+        pip install --quiet pyyaml kafka-python psycopg2-binary pymongo &&
+        python scripts/integration_smoke_test.py 2>&1 | tee logs/harness_output.log
+      "
+
+volumes:
+  mongo_data:
+  harness_logs:

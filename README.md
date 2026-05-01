@@ -72,6 +72,35 @@ make run-producer
 make run-mongo-setup
 ```
 
+## Docker Compose (Full Integration)
+
+Start all services locally (Kafka, Postgres, Mongo, storm-harness):
+
+```bash
+docker-compose -f docker/docker-compose.yml up -d
+docker-compose -f docker/docker-compose.yml logs -f storm-harness
+```
+
+The `storm-harness` service automatically runs an in-process topology runner (~25% sample).
+
+## Testing
+
+For comprehensive testing instructions, thresholds, expected results, and troubleshooting:
+
+→ See [TESTING.md](./TESTING.md)
+
+Quick smoke test (1% sample, no Docker needed):
+
+```bash
+python scripts/run_quick_smoke.py
+```
+
+Full integration test (25% sample, requires docker-compose):
+
+```bash
+python scripts/run_full_integration.py
+```
+
 ## Notes
 
 - Kafka topic is fixed to `crime-events` via config.
