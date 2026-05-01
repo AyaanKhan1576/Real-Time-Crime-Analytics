@@ -72,16 +72,27 @@ make run-producer
 make run-mongo-setup
 ```
 
-## Docker Compose (Full Integration)
+## Docker Compose (Real Storm Cluster)
 
-Start all services locally (Kafka, Postgres, Mongo, storm-harness):
+Start the real cluster services locally (Zookeeper, Kafka, Postgres, Mongo, Storm Nimbus, Storm Supervisor, Storm UI):
 
 ```bash
-docker-compose -f docker/docker-compose.yml up -d
-docker-compose -f docker/docker-compose.yml logs -f storm-harness
+docker compose -f docker/docker-compose.yml up -d
+docker compose -f docker/docker-compose.yml ps
+docker compose -f docker/docker-compose.yml logs -f storm-ui
 ```
 
-The `storm-harness` service automatically runs an in-process topology runner (~25% sample).
+Deploy the Java topology after the cluster is healthy:
+
+```bash
+docker compose -f docker/docker-compose.yml --profile java-submit up -d storm-submit-java
+```
+
+For local in-process verification only, enable the optional harness profile:
+
+```bash
+docker compose -f docker/docker-compose.yml --profile harness up -d
+```
 
 ## Testing
 
@@ -95,7 +106,7 @@ Quick smoke test (1% sample, no Docker needed):
 python scripts/run_quick_smoke.py
 ```
 
-Full integration test (25% sample, requires docker-compose):
+Full integration test (row-capped smoke path for fast verification):
 
 ```bash
 python scripts/run_full_integration.py

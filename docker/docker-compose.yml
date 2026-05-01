@@ -23,6 +23,38 @@ services:
     ports:
       - "9092:9092"
 
+  storm-nimbus:
+    image: storm:2.6.0
+    depends_on:
+      - zookeeper
+    command: storm nimbus
+    environment:
+      STORM_ZOOKEEPER_SERVERS: zookeeper
+      STORM_NIMBUS_SEEDS: storm-nimbus
+    ports:
+      - "6627:6627"
+
+  storm-supervisor:
+    image: storm:2.6.0
+    depends_on:
+      - storm-nimbus
+      - zookeeper
+    command: storm supervisor
+    environment:
+      STORM_ZOOKEEPER_SERVERS: zookeeper
+      STORM_NIMBUS_SEEDS: storm-nimbus
+
+  storm-ui:
+    image: storm:2.6.0
+    depends_on:
+      - storm-nimbus
+    command: storm ui
+    environment:
+      STORM_ZOOKEEPER_SERVERS: zookeeper
+      STORM_NIMBUS_SEEDS: storm-nimbus
+    ports:
+      - "8080:8080"
+
   postgres:
     image: postgres:14
     environment:
@@ -46,6 +78,8 @@ services:
       - mongo_data:/data/db
 
   storm-harness:
+    profiles:
+      - harness
     build:
       context: ../
       dockerfile: docker/Dockerfiles/storm/Dockerfile
@@ -70,6 +104,29 @@ services:
       MONGODB_DB: crime_analytics
     command: >
       bash -c "PERSIST_TO_DBS=1 MAX_ROWS=5000 STORM__ANOMALY_THRESHOLD=1 STORM__SEVERITY__LOW_MIN=1 STORM__SEVERITY__MEDIUM_MIN=2 STORM__SEVERITY__HIGH_MIN=3 OUTPUT_DIR=/app/logs python scripts/run_full_integration.py 2>&1 | tee logs/harness_output.log"
+
+  storm-submit-java:
+    profiles:
+      - java-submit
+    build:
+      context: ../
+      dockerfile: java-topology/Dockerfile
+    depends_on:
+      - kafka
+      - storm-nimbus
+      - storm-supervisor
+      - storm-ui
+    environment:
+      PYTHONUNBUFFERED: 1
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: crime_user
+      POSTGRES_PASSWORD: crime_password
+      POSTGRES_DB: crime_analytics
+      MONGODB_HOST: mongodb
+      MONGODB_PORT: 27017
+      MONGODB_DB: crime_analytics
 
 volumes:
   mongo_data:

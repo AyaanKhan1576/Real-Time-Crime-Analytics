@@ -58,7 +58,10 @@ def run_producer(config_path="config/config.yaml", max_rows=None):
     if not os.path.exists(data_file):
         raise FileNotFoundError(f"Crime dataset not found: {data_file}")
 
-    rate = max(rate, 0.1)
+    if rate <= 0:
+        rate = 0
+    else:
+        rate = max(rate, 0.1)
     sent = 0
     logging.info("Producer starting. topic=%s broker=%s rate=%s file=%s", topic, bootstrap, rate, data_file)
 
@@ -90,7 +93,8 @@ def run_producer(config_path="config/config.yaml", max_rows=None):
             }
 
             producer.send(topic, msg)
-            time.sleep(1.0 / rate)
+            if rate > 0:
+                time.sleep(1.0 / rate)
             sent += 1
 
             if max_rows and sent >= max_rows:

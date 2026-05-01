@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# For Java topology deployment (final target expected by assignment):
-# storm jar storm/topology/crime-alert-topology.jar com.project.CrimeAlertTopology
-
-# Python/streamparse development entrypoint placeholder:
-streamparse run storm.topology.crime_alert_topology.CrimeAlertTopology
+echo "Start the real cluster first: docker compose -f docker/docker-compose.yml up -d"
+echo "Then submit the Java topology with:"
+echo "docker compose -f docker/docker-compose.yml --profile java-submit up -d storm-submit-java"

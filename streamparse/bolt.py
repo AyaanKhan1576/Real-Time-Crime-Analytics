@@ -4,6 +4,10 @@ bolt implementations can be imported and used in-process without installing
 the real `streamparse` package.
 """
 class Bolt:
+    @classmethod
+    def spec(cls, **kwargs):
+        return {"component": cls.__name__, "kwargs": kwargs}
+
     def initialize(self, conf, ctx):
         return None
 
