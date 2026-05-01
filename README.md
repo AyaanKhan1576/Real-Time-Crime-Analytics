@@ -35,7 +35,9 @@ latitude
 longitude
 ```
 
-`district` is always treated as `STRING`. Missing district values become `UNKNOWN`.
+`district` is always treated as `STRING`. Numeric districts are normalized to zero-padded strings such as `001` and missing district values become `UNKNOWN`.
+
+For sex offender density, the source dataset does not provide police district. Spark derives an approximate district by matching offender blocks to crime blocks. Blocks that cannot be matched, including missing block values, are kept as an `UNMATCHED` summary row and are not ranked as a real district.
 
 ## Expected Datasets
 
@@ -61,12 +63,28 @@ config/config.yaml
 
 Change dataset sampling, Kafka topic, producer speed, Storm threshold, database credentials, Spark settings, and dashboard refresh there only.
 
+Default Spark batch mode is the full dataset run:
+
+```yaml
+data:
+  sample_mode: false
+spark:
+  progress_interval_seconds: 30
+  log_dir: "/app/logs/spark"
+```
+
+For faster local Spark testing, use:
+
+```text
+config/config.spark_15pct.yaml
+```
+
 ## Docker Startup
 
 From WSL in the repository root:
 
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
 Required services:
@@ -112,31 +130,85 @@ Storm topology submission is reserved for the streaming implementation artifact:
 make run-storm
 ```
 
-## Current Batch Milestone
+Spark-only full dataset run:
+
+```bash
+make spark-up
+make spark-run
+make run-dashboard
+```
+
+Spark-only 15 percent test run:
+
+```bash
+make spark-up
+make spark-run-15pct
+make run-dashboard
+```
+
+Spark progress logs are written to:
+
+```text
+logs/spark/<run_id>.log
+```
+
+Watch the newest Spark run log:
+
+```bash
+tail -f "$(ls -t logs/spark/*.log | head -1)"
+```
+
+The dashboard violence section shows the full historical monthly range from the latest completed Spark run, including homicide victimizations back to 1991 when present in `violence.csv`. Detail tables are summarized so older records are not hidden by a short `LIMIT`.
+
+Dashboard historical views include:
+
+```text
+Crime Trends: year, month, day_of_week, and hour charts
+Arrest Rate Analysis: top 10 crime types by arrest rate plus primary_type/district/race detail
+Violence Analysis: monthly totals, month-by-district detail, gunshot proportion, and top community areas
+Sex Offender Density: ranked matched districts plus separate UNMATCHED summary
+Hotspot Map: K-Means cluster centroids and crime counts
+Correlations: violence-rate/arrest-rate and sex-offender-density/crime-rate rows
+```
+
+## Spark Batch Layer
 
 Implemented:
 
 ```text
 explicit Spark schemas for all five datasets
 shared config loader
-crime CSV loading with sample mode
-crime cleaning and standardized fields
+all five dataset loaders with sample/full config modes
+cleaning and standardized fields
 district string enforcement
 crime trend analytics
-PostgreSQL staging table write
-staging-to-final publish
+arrest rate analysis
+violence and gunshot analysis
+sex offender density analysis with unmatched-block handling
+K-Means hotspot detection
+cross-dataset correlations
+PostgreSQL staging table writes
+staging-to-final publish after successful completion
 batch_job_status running/completed/failed updates
 ```
 
-First successful Spark milestone:
+Required Spark outputs:
 
 ```text
-Spark reads crimes.csv with explicit schema
-district is cast to string
-crime trends are computed
-crime_trends_temp is populated
-crime_trends is populated after success
-batch_job_status changes from running to completed
+crime_trends
+arrest_rates
+violence_stats
+sex_offender_density
+hotspots
+correlations
+```
+
+Coverage checks from the latest completed full run should show:
+
+```text
+crime_trends yearly total = crime CSV data rows
+violence_stats monthly total_incidents = violence CSV data rows
+sex_offender_density matched + UNMATCHED offender_count = sex offender CSV data rows
 ```
 
 ## Latest Completed Batch Rule

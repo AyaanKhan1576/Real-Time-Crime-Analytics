@@ -167,6 +167,271 @@ def render_crime_trends(config: dict[str, Any], run_id: str) -> None:
         st.plotly_chart(figure, use_container_width=True)
 
 
+def render_arrest_rates(config: dict[str, Any], run_id: str) -> None:
+    """
+    Render arrest rate analysis, including the required top 10 crime types.
+
+    Parameters
+    ----------
+    config : dict[str, Any]
+        Project configuration.
+    run_id : str
+        Latest completed run identifier.
+    """
+    st.subheader("Arrest Rate Analysis")
+
+    top_crime_types = query_df(
+        config,
+        """
+        SELECT primary_type, total_crimes, total_arrests, arrest_rate
+        FROM arrest_rates
+        WHERE run_id = %s
+          AND district = 'ALL'
+          AND race = 'ALL'
+        ORDER BY arrest_rate DESC NULLS LAST, total_crimes DESC, primary_type ASC
+        LIMIT 10;
+        """,
+        (run_id,),
+    )
+
+    if top_crime_types.empty:
+        st.info("No top crime-type arrest-rate rows are available for the latest completed run.")
+    else:
+        figure = px.bar(
+            top_crime_types,
+            x="primary_type",
+            y="arrest_rate",
+            hover_data=["total_crimes", "total_arrests"],
+            title="Top 10 Crime Types by Arrest Rate",
+        )
+        st.plotly_chart(figure, use_container_width=True)
+        st.dataframe(top_crime_types, use_container_width=True, hide_index=True)
+
+    detailed = query_df(
+        config,
+        """
+        SELECT primary_type, district, race, total_crimes, total_arrests, arrest_rate
+        FROM arrest_rates
+        WHERE run_id = %s
+          AND NOT (district = 'ALL' AND race = 'ALL')
+        ORDER BY primary_type ASC, district ASC, race ASC
+        LIMIT 500;
+        """,
+        (run_id,),
+    )
+    render_dataframe_section("Arrest Rates by Crime Type, District, and Race", detailed)
+
+
+def render_sex_offender_density(config: dict[str, Any], run_id: str) -> None:
+    """
+    Render ranked sex offender density without treating unmatched blocks as a district.
+
+    Parameters
+    ----------
+    config : dict[str, Any]
+        Project configuration.
+    run_id : str
+        Latest completed run identifier.
+    """
+    density = query_df(
+        config,
+        """
+        SELECT district, district_name, offender_count, victim_minor_count, density_rank
+        FROM sex_offender_density
+        WHERE run_id = %s
+        ORDER BY density_rank ASC NULLS LAST, offender_count DESC;
+        """,
+        (run_id,),
+    )
+
+    st.subheader("Sex Offender Density")
+    if density.empty:
+        st.info("No sex offender density rows are available for the latest completed run.")
+        return
+
+    unmatched = density[density["district"] == "UNMATCHED"].copy()
+    ranked = density[density["district"] != "UNMATCHED"].copy()
+
+    if not unmatched.empty:
+        row = unmatched.iloc[0]
+        st.info(
+            "Unmatched block-level records are excluded from district ranking: "
+            f"{int(row['offender_count'])} offenders, "
+            f"{int(row['victim_minor_count'])} victim-minor flags. "
+            "The sex offender dataset does not provide district, and these blocks could not be matched to crime blocks."
+        )
+
+    if ranked.empty:
+        st.info("No district-matched sex offender rows are available for the latest completed run.")
+        return
+
+    district_names = ranked["district_name"].fillna("").astype(str)
+    if district_names.str.contains("unavailable", case=False).all():
+        ranked = ranked.drop(columns=["district_name"])
+
+    st.dataframe(ranked, use_container_width=True, hide_index=True)
+
+
+def render_violence_analysis(config: dict[str, Any], run_id: str) -> None:
+    """
+    Render violence analysis with full historical coverage.
+
+    Parameters
+    ----------
+    config : dict[str, Any]
+        Project configuration.
+    run_id : str
+        Latest completed run identifier.
+    """
+    monthly = query_df(
+        config,
+        """
+        SELECT
+            month,
+            SUM(total_homicides) AS total_homicides,
+            SUM(total_nonfatal_shootings) AS total_nonfatal_shootings,
+            SUM(gunshot_incidents) AS gunshot_incidents,
+            SUM(total_incidents) AS total_incidents,
+            CASE
+                WHEN SUM(total_incidents) > 0
+                THEN SUM(gunshot_incidents)::DOUBLE PRECISION / SUM(total_incidents)
+                ELSE 0.0
+            END AS gunshot_proportion
+        FROM violence_stats
+        WHERE run_id = %s
+          AND month <> 'ALL'
+        GROUP BY month
+        ORDER BY month ASC;
+        """,
+        (run_id,),
+    )
+
+    st.subheader("Violence Analysis")
+    if monthly.empty:
+        st.info("No violence rows are available for the latest completed run.")
+        return
+
+    numeric_columns = [
+        "total_homicides",
+        "total_nonfatal_shootings",
+        "gunshot_incidents",
+        "total_incidents",
+        "gunshot_proportion",
+    ]
+    for column in numeric_columns:
+        monthly[column] = pd.to_numeric(monthly[column], errors="coerce").fillna(0)
+
+    metric_columns = st.columns(4)
+    metric_columns[0].metric("Earliest Month", str(monthly.iloc[0]["month"]))
+    metric_columns[1].metric("Latest Month", str(monthly.iloc[-1]["month"]))
+    metric_columns[2].metric("Victimizations", f"{int(monthly['total_incidents'].sum()):,}")
+    total_incidents = monthly["total_incidents"].sum()
+    gunshot_incidents = monthly["gunshot_incidents"].sum()
+    gunshot_rate = 0.0 if total_incidents == 0 else gunshot_incidents / total_incidents
+    metric_columns[3].metric("Gunshot Proportion", f"{gunshot_rate:.1%}")
+
+    timeline = monthly.melt(
+        id_vars=["month"],
+        value_vars=["total_homicides", "total_nonfatal_shootings", "gunshot_incidents", "total_incidents"],
+        var_name="metric",
+        value_name="count",
+    )
+    figure = px.line(
+        timeline,
+        x="month",
+        y="count",
+        color="metric",
+        title="Violence Victimizations by Month",
+    )
+    st.plotly_chart(figure, use_container_width=True)
+    st.dataframe(monthly, use_container_width=True, hide_index=True)
+
+    district_month = query_df(
+        config,
+        """
+        SELECT
+            month,
+            district,
+            SUM(total_homicides) AS total_homicides,
+            SUM(total_nonfatal_shootings) AS total_nonfatal_shootings,
+            SUM(gunshot_incidents) AS gunshot_incidents,
+            SUM(total_incidents) AS total_incidents,
+            CASE
+                WHEN SUM(total_incidents) > 0
+                THEN SUM(gunshot_incidents)::DOUBLE PRECISION / SUM(total_incidents)
+                ELSE 0.0
+            END AS gunshot_proportion
+        FROM violence_stats
+        WHERE run_id = %s
+          AND month <> 'ALL'
+        GROUP BY month, district
+        ORDER BY month ASC, district ASC;
+        """,
+        (run_id,),
+    )
+    if not district_month.empty:
+        for column in numeric_columns:
+            district_month[column] = pd.to_numeric(district_month[column], errors="coerce").fillna(0)
+
+        available_districts = sorted(
+            district
+            for district in district_month["district"].dropna().astype(str).unique().tolist()
+            if district != "ALL"
+        )
+        selected_district = st.selectbox(
+            "Violence District",
+            ["ALL"] + available_districts,
+            index=0,
+        )
+        selected_rows = (
+            district_month
+            if selected_district == "ALL"
+            else district_month[district_month["district"].astype(str) == selected_district]
+        )
+        if selected_district != "ALL" and not selected_rows.empty:
+            district_timeline = selected_rows.melt(
+                id_vars=["month"],
+                value_vars=[
+                    "total_homicides",
+                    "total_nonfatal_shootings",
+                    "gunshot_incidents",
+                    "total_incidents",
+                ],
+                var_name="metric",
+                value_name="count",
+            )
+            district_figure = px.line(
+                district_timeline,
+                x="month",
+                y="count",
+                color="metric",
+                title=f"Violence Victimizations in District {selected_district}",
+            )
+            st.plotly_chart(district_figure, use_container_width=True)
+        render_dataframe_section("Violence by Month and District", selected_rows)
+
+    top_communities = query_df(
+        config,
+        """
+        SELECT
+            community_area,
+            total_homicides,
+            total_nonfatal_shootings,
+            gunshot_incidents,
+            total_incidents,
+            gunshot_proportion
+        FROM violence_stats
+        WHERE run_id = %s
+          AND month = 'ALL'
+          AND district = 'ALL'
+        ORDER BY total_incidents DESC NULLS LAST, community_area ASC
+        LIMIT 20;
+        """,
+        (run_id,),
+    )
+    render_dataframe_section("Top Violence Community Areas", top_communities)
+
+
 def render_dashboard() -> None:
     """
     Render the Streamlit dashboard.
@@ -228,49 +493,9 @@ def render_dashboard() -> None:
         st.info("Historical analytics are still being generated. Live alerts are active.")
     else:
         render_crime_trends(config, latest_run)
-        render_dataframe_section(
-            "Arrest Rates",
-            query_df(
-                config,
-                """
-                SELECT primary_type, district, race, total_crimes, total_arrests, arrest_rate
-                FROM arrest_rates
-                WHERE run_id = %s
-                ORDER BY arrest_rate DESC NULLS LAST
-                LIMIT 100;
-                """,
-                (latest_run,),
-            ),
-        )
-        render_dataframe_section(
-            "Violence Analysis",
-            query_df(
-                config,
-                """
-                SELECT month, district, community_area, total_homicides,
-                       total_nonfatal_shootings, gunshot_incidents,
-                       total_incidents, gunshot_proportion
-                FROM violence_stats
-                WHERE run_id = %s
-                LIMIT 100;
-                """,
-                (latest_run,),
-            ),
-        )
-        render_dataframe_section(
-            "Sex Offender Density",
-            query_df(
-                config,
-                """
-                SELECT district, district_name, offender_count, victim_minor_count, density_rank
-                FROM sex_offender_density
-                WHERE run_id = %s
-                ORDER BY density_rank ASC NULLS LAST
-                LIMIT 100;
-                """,
-                (latest_run,),
-            ),
-        )
+        render_arrest_rates(config, latest_run)
+        render_violence_analysis(config, latest_run)
+        render_sex_offender_density(config, latest_run)
 
         hotspots = query_df(
             config,

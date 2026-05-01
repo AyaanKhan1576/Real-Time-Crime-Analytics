@@ -51,7 +51,10 @@ def with_standard_column_names(df: DataFrame) -> DataFrame:
 
 def district_string(column_name: str = "district") -> F.Column:
     """
-    Build a district string expression with UNKNOWN fallback.
+    Build a normalized district string expression with UNKNOWN fallback.
+
+    Numeric Chicago police districts are stored as zero-padded strings so
+    district joins work consistently across crime, violence, and station data.
 
     Parameters
     ----------
@@ -64,7 +67,12 @@ def district_string(column_name: str = "district") -> F.Column:
         Cleaned district expression.
     """
     value = F.trim(F.col(column_name).cast("string"))
-    return F.when(value.isNull() | (value == ""), F.lit("UNKNOWN")).otherwise(value)
+    numeric_value = F.regexp_replace(value, r"\.0$", "")
+    return (
+        F.when(value.isNull() | (value == ""), F.lit("UNKNOWN"))
+        .when(numeric_value.rlike(r"^[0-9]+$"), F.lpad(numeric_value, 3, "0"))
+        .otherwise(value)
+    )
 
 
 def parse_timestamp(column_name: str) -> F.Column:

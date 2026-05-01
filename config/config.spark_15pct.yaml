@@ -63,6 +63,8 @@ spark:
   master: "spark://spark-master:7077"
   shuffle_partitions: 8
   kmeans_k: 10
+  progress_interval_seconds: 30
+  log_dir: "/app/logs/spark"
   latest_completed_only: true
   run_id_format: "batch_YYYYMMDD_HHMMSS"
   write_mode: "staging_then_publish"

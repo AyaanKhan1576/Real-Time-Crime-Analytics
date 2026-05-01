@@ -124,6 +124,7 @@ def compute_correlations(
             F.col("district").cast("string").alias("district"),
             F.col("offender_count").cast("double").alias("offender_density"),
         )
+        .where(F.col("district") != "UNMATCHED")
         .join(crime_by_district, "district", "left")
         .fillna({"total_crimes": 0})
         .withColumn(

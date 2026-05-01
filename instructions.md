@@ -72,7 +72,7 @@ This project supports two equivalent command styles:
 The Make targets are wrappers around the scripts where applicable.
 
 ```text
-make spark-run / make run-spark             -> ./scripts/run_spark_batch.sh
+make spark-run / make run-spark             -> ./scripts/run_spark_batch.sh /app/config/config.yaml
 make spark-run-15pct / make run-spark-15pct -> ./scripts/run_spark_batch.sh /app/config/config.spark_15pct.yaml
 make run-storm                              -> ./scripts/run_storm_topology.sh
 make run-producer                           -> ./scripts/run_kafka_producer.sh
@@ -90,6 +90,16 @@ Default Spark config:
 
 ```text
 /app/config/config.yaml
+```
+
+The default Spark config is the full dataset run:
+
+```yaml
+data:
+  sample_mode: false
+spark:
+  progress_interval_seconds: 30
+  log_dir: "/app/logs/spark"
 ```
 
 15 percent local test config:
@@ -114,6 +124,35 @@ data:
 ```
 
 To change the local test size, edit those values in `config/config.spark_15pct.yaml`, then run Spark with the named 15 percent target. For a new test profile, copy the config file and pass the new path to either the Make target or the script.
+
+### Spark Progress Logs
+
+Each Spark batch run writes periodic progress logs to:
+
+```text
+logs/spark/<run_id>.log
+```
+
+Progress is logged at step start, step completion, and at the configured interval while a long step is still running. The interval is intentionally periodic so logging does not slow processing.
+
+To watch the newest Spark run log from the project root:
+
+```bash
+tail -f "$(ls -t logs/spark/*.log | head -1)"
+```
+
+To change the heartbeat interval, edit the Spark config instead of passing an environment variable:
+
+```yaml
+spark:
+  progress_interval_seconds: 60
+```
+
+The Spark UI is also useful while a job is running:
+
+```text
+http://localhost:8081
+```
 
 ## 3. Full Project Run
 
@@ -211,7 +250,7 @@ Expected behavior:
 
 ## 4. Spark-Only Run: Default Config
 
-Use this when testing only the Spark batch layer and dashboard.
+Use this when testing only the Spark batch layer and dashboard with the full dataset.
 
 ### Option A: Make Targets
 
@@ -236,7 +275,8 @@ This runs Spark using:
 /app/config/config.yaml
 ```
 
-The default config uses the normal configured sample/full-data settings in `config/config.yaml`.
+The default config is the full dataset mode. In `config/config.yaml`, `data.sample_mode` is `false`.
+Spark progress logging is also controlled by `config/config.yaml` using `spark.progress_interval_seconds` and `spark.log_dir`.
 
 ## 5. Spark-Only Run: 15 Percent Test Data
 
@@ -324,6 +364,59 @@ Expected result:
 - `batch_job_status` should show a latest `completed` run.
 - All six Spark analytics tables should have counts greater than `0`.
 
+Check violence date coverage. The Violence Reduction dataset contains homicide victimizations back to 1991, so the latest full run should include early months when the local CSV includes them:
+
+```bash
+docker exec postgres psql -U crime_user -d crime_analytics -c "
+WITH latest AS (
+  SELECT run_id
+  FROM batch_job_status
+  WHERE status = 'completed'
+  ORDER BY finished_at DESC
+  LIMIT 1
+)
+SELECT MIN(month) AS min_month,
+       MAX(month) AS max_month,
+       SUM(total_incidents) AS victimization_rows
+FROM violence_stats
+WHERE run_id = (SELECT run_id FROM latest)
+  AND month <> 'ALL';
+"
+```
+
+Check that the main full-run outputs account for the source CSV data rows:
+
+```bash
+wc -l data/crimes.csv data/violence.csv data/sex_offenders.csv
+```
+
+Subtract one header row from each CSV count, then compare with:
+
+```bash
+docker exec postgres psql -U crime_user -d crime_analytics -c "
+WITH latest AS (
+  SELECT run_id
+  FROM batch_job_status
+  WHERE status = 'completed'
+  ORDER BY finished_at DESC
+  LIMIT 1
+)
+SELECT 'crime_year_total' AS check_name, SUM(crime_count) AS row_count
+FROM crime_trends
+WHERE run_id = (SELECT run_id FROM latest)
+  AND trend_type = 'year'
+UNION ALL
+SELECT 'violence_month_total', SUM(total_incidents)
+FROM violence_stats
+WHERE run_id = (SELECT run_id FROM latest)
+  AND month <> 'ALL'
+UNION ALL
+SELECT 'sex_offender_total', SUM(offender_count)
+FROM sex_offender_density
+WHERE run_id = (SELECT run_id FROM latest);
+"
+```
+
 ## 7. Dashboard Verification
 
 Check that Streamlit is responding:
@@ -340,12 +433,12 @@ HTTP/1.1 200 OK
 
 The dashboard should show:
 
-- Crime Trends
-- Arrest Rates
-- Violence Analysis
-- Sex Offender Density
-- Hotspot Map
-- Correlations
+- Crime Trends grouped by year, month, day of week, and hour.
+- Arrest Rate Analysis with top 10 crime types by arrest rate and the primary type, district, and race breakdown.
+- Violence Analysis with full monthly coverage, month-by-district totals, gunshot proportion, and top community areas.
+- Sex Offender Density with ranked matched districts, victim-minor counts, and a separate `UNMATCHED` summary.
+- Hotspot Map with K-Means cluster centroids and crime counts.
+- Correlations for violence rate vs arrest rate and sex offender density vs crime rate.
 - Batch job status
 
 If Kafka and Storm are not running, real-time alerts may be empty. That is expected during Spark-only testing.
@@ -493,11 +586,13 @@ git diff --stat
 
 - Spark uses explicit schemas only.
 - `inferSchema=True` must not be used.
-- `district` is standardized as string.
+- `district` is standardized as a zero-padded string where numeric, for example `001`.
 - Batch outputs use `run_id`.
 - Spark writes to temp tables first, then publishes to final tables only after successful completion.
 - Dashboard reads the latest completed Spark run only.
 - Failed or running Spark runs are ignored by the dashboard for historical analytics.
+- Sex offender records do not include police district in the source data. Spark approximates district by matching offender blocks to crime blocks, ranks only matched districts, and keeps unmatched or missing-block records as a separate `UNMATCHED` summary row.
+- The Violence Analysis dashboard section uses full monthly summaries and month-by-district totals rather than a short unsorted detail-table slice, so older homicide records are visible when present in the CSV.
 - Kafka and Storm integration is separate from Spark and should not duplicate Spark analytics.
 - Spark-owned tables are `crime_trends`, `arrest_rates`, `violence_stats`, `sex_offender_density`, `hotspots`, `correlations`, and `batch_job_status`.
 - Storm-owned tables are `alerts` and `realtime_district_counts`.

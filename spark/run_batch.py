@@ -34,6 +34,7 @@ from spark.persistence.postgres_writer import (
     write_sex_offender_density_temp,
     write_violence_stats_temp,
 )
+from spark.progress_logging import SparkProgressTracker, configure_run_logging
 from spark.preprocessing.clean_data import (
     clean_arrests,
     clean_crimes,
@@ -123,64 +124,100 @@ def run_batch(config_path: str, master_override: str | None = None, run_id: str 
     current_run_id = run_id or generate_run_id()
     job_name = config["spark"]["app_name"]
     spark: SparkSession | None = None
+    output_counts: dict[str, int] = {}
+    publish_tables = [
+        "crime_trends",
+        "arrest_rates",
+        "violence_stats",
+        "sex_offender_density",
+        "hotspots",
+        "correlations",
+    ]
 
+    spark_config = config["spark"]
+    progress_interval_seconds = float(spark_config.get("progress_interval_seconds", 30))
+    log_path = configure_run_logging(current_run_id, spark_config.get("log_dir"))
     logger.info("Starting batch run_id=%s", current_run_id)
-    mark_batch_started(config, current_run_id, job_name)
+    logger.info("Spark batch log file: %s", log_path)
+    logger.info("Progress heartbeat interval: %.1f seconds", progress_interval_seconds)
+    progress = SparkProgressTracker(
+        current_run_id,
+        total_steps=15,
+        logger=logger,
+        interval_seconds=progress_interval_seconds,
+    )
 
     try:
-        spark = build_spark_session(config, master_override)
+        with progress.stage("Register batch_job_status row"):
+            mark_batch_started(config, current_run_id, job_name)
 
-        cleaned_crimes = clean_crimes(load_crimes(spark, config)).cache()
-        cleaned_arrests = clean_arrests(load_arrests(spark, config)).cache()
-        cleaned_violence = clean_violence(load_violence(spark, config)).cache()
-        cleaned_sex_offenders = clean_sex_offenders(load_sex_offenders(spark, config)).cache()
-        cleaned_police_stations = clean_police_stations(load_police_stations(spark, config)).cache()
+        with progress.stage("Build Spark session"):
+            spark = build_spark_session(config, master_override)
 
-        crime_trends = compute_crime_trends(cleaned_crimes, current_run_id)
-        arrest_rates = compute_arrest_rates(cleaned_crimes, cleaned_arrests, current_run_id)
-        violence_stats = compute_violence_stats(cleaned_violence, current_run_id)
-        sex_offender_density = compute_sex_offender_density(
-            cleaned_sex_offenders,
-            cleaned_police_stations,
-            cleaned_crimes,
-            current_run_id,
-        ).cache()
-        hotspots = compute_hotspots(spark, cleaned_crimes, config, current_run_id)
-        correlations = compute_correlations(
-            cleaned_crimes,
-            cleaned_arrests,
-            cleaned_violence,
-            sex_offender_density,
-            current_run_id,
-        )
+        with progress.stage("Load and standardize crimes"):
+            cleaned_crimes = clean_crimes(load_crimes(spark, config)).cache()
 
-        output_counts = {
-            "crime_trends": write_crime_trends_temp(config, crime_trends, current_run_id),
-            "arrest_rates": write_arrest_rates_temp(config, arrest_rates, current_run_id),
-            "violence_stats": write_violence_stats_temp(config, violence_stats, current_run_id),
-            "sex_offender_density": write_sex_offender_density_temp(config, sex_offender_density, current_run_id),
-            "hotspots": write_hotspots_temp(config, hotspots, current_run_id),
-            "correlations": write_correlations_temp(config, correlations, current_run_id),
-        }
+        with progress.stage("Load and standardize arrests"):
+            cleaned_arrests = clean_arrests(load_arrests(spark, config)).cache()
 
-        publish_temp_tables(
-            config,
-            current_run_id,
-            [
-                "crime_trends",
-                "arrest_rates",
-                "violence_stats",
-                "sex_offender_density",
-                "hotspots",
-                "correlations",
-            ],
-        )
-        mark_batch_completed(
-            config,
-            current_run_id,
-            "Batch analytics completed successfully. Published rows: "
-            + ", ".join(f"{table}={count}" for table, count in output_counts.items()),
-        )
+        with progress.stage("Load and standardize violence incidents"):
+            cleaned_violence = clean_violence(load_violence(spark, config)).cache()
+
+        with progress.stage("Load and standardize sex offenders"):
+            cleaned_sex_offenders = clean_sex_offenders(load_sex_offenders(spark, config)).cache()
+
+        with progress.stage("Load and standardize police stations"):
+            cleaned_police_stations = clean_police_stations(load_police_stations(spark, config)).cache()
+
+        with progress.stage("Compute and stage crime trends"):
+            crime_trends = compute_crime_trends(cleaned_crimes, current_run_id)
+            output_counts["crime_trends"] = write_crime_trends_temp(config, crime_trends, current_run_id)
+
+        with progress.stage("Compute and stage arrest rates"):
+            arrest_rates = compute_arrest_rates(cleaned_crimes, cleaned_arrests, current_run_id)
+            output_counts["arrest_rates"] = write_arrest_rates_temp(config, arrest_rates, current_run_id)
+
+        with progress.stage("Compute and stage violence statistics"):
+            violence_stats = compute_violence_stats(cleaned_violence, current_run_id)
+            output_counts["violence_stats"] = write_violence_stats_temp(config, violence_stats, current_run_id)
+
+        with progress.stage("Compute and stage sex offender density"):
+            sex_offender_density = compute_sex_offender_density(
+                cleaned_sex_offenders,
+                cleaned_police_stations,
+                cleaned_crimes,
+                current_run_id,
+            ).cache()
+            output_counts["sex_offender_density"] = write_sex_offender_density_temp(
+                config,
+                sex_offender_density,
+                current_run_id,
+            )
+
+        with progress.stage("Compute and stage K-Means hotspots"):
+            hotspots = compute_hotspots(spark, cleaned_crimes, config, current_run_id)
+            output_counts["hotspots"] = write_hotspots_temp(config, hotspots, current_run_id)
+
+        with progress.stage("Compute and stage cross-dataset correlations"):
+            correlations = compute_correlations(
+                cleaned_crimes,
+                cleaned_arrests,
+                cleaned_violence,
+                sex_offender_density,
+                current_run_id,
+            )
+            output_counts["correlations"] = write_correlations_temp(config, correlations, current_run_id)
+
+        with progress.stage("Publish staging tables to final tables"):
+            publish_temp_tables(config, current_run_id, publish_tables)
+
+        with progress.stage("Mark batch run completed"):
+            mark_batch_completed(
+                config,
+                current_run_id,
+                "Batch analytics completed successfully. Published rows: "
+                + ", ".join(f"{table}={count}" for table, count in output_counts.items()),
+            )
         logger.info("Completed batch run_id=%s", current_run_id)
         return current_run_id
     except Exception as exc:

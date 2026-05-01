@@ -18,7 +18,7 @@ data:
   violence_file: "violence.csv"
   sex_offenders_file: "sex_offenders.csv"
   police_stations_file: "police_stations.csv"
-  sample_mode: true
+  sample_mode: false
   crime_sample_rows: 50000
   other_sample_rows: 10000
 
@@ -63,6 +63,8 @@ spark:
   master: "spark://spark-master:7077"
   shuffle_partitions: 8
   kmeans_k: 10
+  progress_interval_seconds: 30
+  log_dir: "/app/logs/spark"
   latest_completed_only: true
   run_id_format: "batch_YYYYMMDD_HHMMSS"
   write_mode: "staging_then_publish"
