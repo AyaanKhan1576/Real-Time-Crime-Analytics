@@ -1,19 +1,5 @@
 import os
 import yaml
-from copy import deepcopy
-
-
-def deep_merge(a, b):
-    """Recursively merge dict b into dict a and return result."""
-    if not isinstance(b, dict):
-        return b
-    result = deepcopy(a)
-    for k, v in b.items():
-        if k in result and isinstance(result[k], dict) and isinstance(v, dict):
-            result[k] = deep_merge(result[k], v)
-        else:
-            result[k] = deepcopy(v)
-    return result
 
 
 def load_yaml(path):
@@ -49,12 +35,10 @@ def _coerce_env_value(val):
         return val
 
 
-def load_config(base_path='config/config.yaml', local_path='config/config.local.yaml'):
-    base = load_yaml(base_path)
-    local = load_yaml(local_path)
-    merged = deep_merge(base, local)
-    merged = overlay_env_vars(merged)
-    return merged
+def load_config(base_path='config/config.yaml'):
+    cfg = load_yaml(base_path)
+    cfg = overlay_env_vars(cfg)
+    return cfg
 
 
 if __name__ == '__main__':
