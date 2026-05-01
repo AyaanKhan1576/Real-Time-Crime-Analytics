@@ -14,6 +14,9 @@ import org.apache.storm.kafka.spout.KafkaSpoutConfig;
 import org.apache.storm.topology.TopologyBuilder;
 
 import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 
 public class CrimeAlertTopology {
     public static void main(String[] args) throws Exception {
@@ -47,6 +50,9 @@ public class CrimeAlertTopology {
         Config stormConf = new Config();
         stormConf.setNumWorkers(2);
         stormConf.setMaxSpoutPending(200);
+        stormConf.registerSerialization(LinkedHashMap.class);
+        stormConf.registerSerialization(HashMap.class);
+        stormConf.registerSerialization(ArrayList.class);
         stormConf.put("topology.name", cfg.topologyName);
         stormConf.put("postgres.host", cfg.postgresHost);
         stormConf.put("postgres.port", cfg.postgresPort);

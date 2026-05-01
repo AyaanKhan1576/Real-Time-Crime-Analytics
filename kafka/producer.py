@@ -38,6 +38,17 @@ def read_any(row, keys):
     return None
 
 
+def normalize_header(name):
+    if name is None:
+        return ""
+    normalized = str(name).strip().lstrip("\ufeff").lower()
+    normalized = [character if character.isalnum() else "_" for character in normalized]
+    normalized = "".join(normalized)
+    while "__" in normalized:
+        normalized = normalized.replace("__", "_")
+    return normalized.strip("_")
+
+
 def run_producer(config_path="config/config.yaml", max_rows=None):
     cfg = load_config(config_path)
     kafka_cfg = cfg.get("kafka", {})
@@ -72,14 +83,15 @@ def run_producer(config_path="config/config.yaml", max_rows=None):
     with open(data_file, newline='', encoding='utf-8') as csvfile:
         reader = csv.DictReader(csvfile)
         for row in reader:
-            case_number = read_any(row, ["CASE NUMBER", "CASE_NUMBER", "case_number"])
-            date_value = read_any(row, ["DATE", "date"])
-            block_value = read_any(row, ["BLOCK", "block"])
-            primary_type = read_any(row, ["PRIMARY TYPE", "PRIMARY_TYPE", "primary_type"])
-            district = read_any(row, ["DISTRICT", "district"])
-            arrest_value = read_any(row, ["ARREST", "arrest"])
-            latitude = read_any(row, ["LATITUDE", "latitude"])
-            longitude = read_any(row, ["LONGITUDE", "longitude"])
+            normalized_row = {normalize_header(key): value for key, value in row.items()}
+            case_number = read_any(row, ["CASE NUMBER", "CASE_NUMBER", "case_number"]) or normalized_row.get("case_number")
+            date_value = read_any(row, ["DATE", "date"]) or normalized_row.get("date")
+            block_value = read_any(row, ["BLOCK", "block"]) or normalized_row.get("block")
+            primary_type = read_any(row, ["PRIMARY TYPE", "PRIMARY_TYPE", "primary_type"]) or normalized_row.get("primary_type")
+            district = read_any(row, ["DISTRICT", "district"]) or normalized_row.get("district")
+            arrest_value = read_any(row, ["ARREST", "arrest"]) or normalized_row.get("arrest")
+            latitude = read_any(row, ["LATITUDE", "latitude"]) or normalized_row.get("latitude")
+            longitude = read_any(row, ["LONGITUDE", "longitude"]) or normalized_row.get("longitude")
 
             # Skip malformed rows before sending to Kafka.
             if not case_number or not date_value or not block_value or not primary_type:
