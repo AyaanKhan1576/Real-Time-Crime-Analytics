@@ -3,6 +3,7 @@ data/raw/
 data/*.csv
 data/*.zip
 .env
+config/config.local.yaml
 venv/
 __pycache__/
 .pytest_cache/
