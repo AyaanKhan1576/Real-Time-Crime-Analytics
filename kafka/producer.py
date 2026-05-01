@@ -4,6 +4,10 @@ import time
 import os
 import logging
 import argparse
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
 from kafka import KafkaProducer
 from config.config_loader import load_config
 

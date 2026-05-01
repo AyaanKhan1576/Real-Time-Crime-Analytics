@@ -24,6 +24,8 @@
 - The producer required the dataset filename to match what's mounted inside the container; I passed env overrides to avoid changing repository config.
 - The topology wrote matching counts to Postgres and Mongo: `alert_logs` equals `alerts` (22) and there are district counts (44 rows) in `realtime_district_counts`.
 - `raw_events` collection remains empty in Mongo (0) because the current Storm topology only writes `alert_logs` for detected alerts.
+- After a later config change, Storm UI stopped loading because the containers tried to `chown` a read-only mounted `storm.yaml`. I fixed that by baking `storm.yaml` into a Storm cluster image and setting `STORM_CONF_DIR=/conf`, then rebuilding `storm-nimbus`, `storm-supervisor`, and `storm-ui`.
+- The producer import error (`ModuleNotFoundError: No module named 'config'`) was fixed by inserting the repo root into `sys.path` inside `kafka/producer.py` and setting `PYTHONPATH=/app` in the harness image.
 
 Next steps available:
 - Commit this `report.md` and push.
@@ -66,7 +68,8 @@ This project implements a Lambda-style pattern with a streaming speed layer impl
 - Storm (Nimbus / Supervisor / UI)
 	- Role: consumes from Kafka, executes the topology (spouts & bolts), and writes alerts/aggregates.
 	- Java topology: packaged with `storm-kafka-client` shaded into the JAR to avoid NoClassDefFoundError during submission.
-	- Important runtime config: `storm.yaml` in the submit image must set `nimbus.seeds` to the compose service name `storm-nimbus` so the submit client locates the Nimbus leader.
+	- Important runtime config: `storm.yaml` in the cluster image must set `nimbus.seeds` to the compose service name `storm-nimbus` so the UI, Nimbus, and submit client all resolve the same leader.
+	- Deployment detail: `storm-nimbus`, `storm-supervisor`, and `storm-ui` now use a dedicated image that copies `java-topology/storm.yaml` into `/conf` instead of a read-only bind mount.
 
 - Java Topology & Bolts
 	- `CrimeAlertTopology` wires Kafka spout → parse bolt → anomaly/detection → alert bolt → sink(s).
@@ -76,7 +79,7 @@ This project implements a Lambda-style pattern with a streaming speed layer impl
 - Producer (Python)
 	- Reads `config/config.yaml`, but env variable overlays are supported (e.g., `DATA__BASE_PATH`, `DATA__CRIME_FILE`, `KAFKA__PRODUCER_RATE_PER_SECOND`).
 	- Can run fast/unthrottled by setting rate to `0`.
-	- Must resolve `config` module; when running ad-hoc `python` commands, ensure `/app` is on `PYTHONPATH` (the compose service already mounts repo at `/app`).
+	- Must resolve `config` module; the current fix inserts the repo root into `sys.path` and also sets `PYTHONPATH=/app` in the harness image so `python kafka/producer.py ...` works consistently inside compose.
 
 - Postgres
 	- Stores normalized `alerts` rows and `realtime_district_counts` aggregates used for serving.
@@ -107,6 +110,16 @@ This project implements a Lambda-style pattern with a streaming speed layer impl
 	- Symptom: submit client couldn't locate the Nimbus leader.
 	- Fix: Add `storm.yaml` into the submit image with `nimbus.seeds: ["storm-nimbus"]` and ensure compose service name matches.
 
+- Storm UI crash after read-only config mount
+	- Symptom: `storm-ui` and `storm-nimbus` exited with `chown: changing ownership of '/conf/storm.yaml': Read-only file system` and the UI returned a `500 Server Error`.
+	- Fix: Replace the bind-mounted config with a custom Storm image that copies `storm.yaml` into `/conf` at build time and sets `STORM_CONF_DIR=/conf`.
+	- Validation: Storm UI responded again on `http://localhost:8080` after recreating the cluster services.
+
+- Harness image failed to build because of streamparse
+	- Symptom: the harness image tried to install `streamparse==3.6.0`, which pulled in `thriftpy` and failed during wheel build.
+	- Fix: Remove `streamparse` from the harness image because the producer path does not need it; keep only the runtime libraries required for the producer and local harness.
+	- Validation: `docker compose -f docker/docker-compose.yml run --rm storm-harness python kafka/producer.py --help` now succeeds.
+
 - Producer dataset filename mismatch causing early abort
 	- Symptom: Producer expected `data/raw/crimes.csv` but dataset file was `Crimes_-_2001_to_Present_20260501.csv`.
 	- Fix: Used environment variable overlays to point `DATA__BASE_PATH` and `DATA__CRIME_FILE` to the actual filename when running inside the compose network.
@@ -135,11 +148,11 @@ docker compose -f docker/docker-compose.yml --profile java-submit up -d storm-su
 
 Run the producer inside the compose network (unthrottled/full replay):
 ```bash
-docker compose -f docker/docker-compose.yml run --rm \
-	-e DATA__BASE_PATH=/app/data/raw \
-	-e DATA__CRIME_FILE=Crimes_-_2001_to_Present_20260501.csv \
-	-e KAFKA__PRODUCER_RATE_PER_SECOND=0 \
-	storm-harness bash -lc "python kafka/producer.py --config config/config.yaml"
+docker compose -f docker/docker-compose.yml run --rm `
+-e DATA__BASE_PATH=/app/data/raw `
+-e DATA__CRIME_FILE=Crimes_-_2001_to_Present_20260501.csv `
+-e KAFKA__PRODUCER_RATE_PER_SECOND=0 `
+storm-harness bash -lc "python kafka/producer.py --config config/config.yaml"
 ```
 
 Verify Postgres counts:
@@ -157,6 +170,16 @@ docker exec docker-mongo-1 mongosh crime_analytics --quiet --eval \
 Collect Storm submit logs (example):
 ```bash
 docker compose -f docker/docker-compose.yml logs --no-color --tail 200 storm-submit-java
+```
+
+Restart Storm after config changes:
+```bash
+docker compose -f docker/docker-compose.yml restart storm-nimbus storm-supervisor storm-ui
+```
+
+If the UI still needs a full recreate:
+```bash
+docker compose -f docker/docker-compose.yml up -d --force-recreate storm-nimbus storm-supervisor storm-ui
 ```
 
 **Harness vs Cluster — usage & purpose**

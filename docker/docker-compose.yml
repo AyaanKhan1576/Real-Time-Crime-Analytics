@@ -24,34 +24,31 @@ services:
       - "9092:9092"
 
   storm-nimbus:
-    image: storm:2.6.0
+    build:
+      context: ../
+      dockerfile: docker/Dockerfiles/storm-cluster/Dockerfile
     depends_on:
       - zookeeper
     command: storm nimbus
-    environment:
-      STORM_ZOOKEEPER_SERVERS: zookeeper
-      STORM_NIMBUS_SEEDS: storm-nimbus
     ports:
       - "6627:6627"
 
   storm-supervisor:
-    image: storm:2.6.0
+    build:
+      context: ../
+      dockerfile: docker/Dockerfiles/storm-cluster/Dockerfile
     depends_on:
       - storm-nimbus
       - zookeeper
     command: storm supervisor
-    environment:
-      STORM_ZOOKEEPER_SERVERS: zookeeper
-      STORM_NIMBUS_SEEDS: storm-nimbus
 
   storm-ui:
-    image: storm:2.6.0
+    build:
+      context: ../
+      dockerfile: docker/Dockerfiles/storm-cluster/Dockerfile
     depends_on:
       - storm-nimbus
     command: storm ui
-    environment:
-      STORM_ZOOKEEPER_SERVERS: zookeeper
-      STORM_NIMBUS_SEEDS: storm-nimbus
     ports:
       - "8080:8080"
 
