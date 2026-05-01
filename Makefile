@@ -1,6 +1,7 @@
-.PHONY: up down build logs spark-up spark-run run-spark run-producer run-storm run-dashboard setup-mongo ps
+.PHONY: up down build logs spark-up spark-run spark-run-15pct run-spark run-spark-15pct run-producer run-storm run-dashboard setup-mongo ps
 
 SPARK_CONFIG ?= /app/config/config.yaml
+SPARK_15PCT_CONFIG ?= /app/config/config.spark_15pct.yaml
 
 up:
 	docker compose -f docker-compose.yml up --build
@@ -24,8 +25,14 @@ spark-up:
 spark-run:
 	./scripts/run_spark_batch.sh $(SPARK_CONFIG)
 
+spark-run-15pct:
+	./scripts/run_spark_batch.sh $(SPARK_15PCT_CONFIG)
+
 run-spark:
 	./scripts/run_spark_batch.sh $(SPARK_CONFIG)
+
+run-spark-15pct:
+	./scripts/run_spark_batch.sh $(SPARK_15PCT_CONFIG)
 
 run-producer:
 	./scripts/run_kafka_producer.sh
