@@ -1,0 +1,9 @@
+# Ignore dataset folders and common secrets
+data/raw/
+data/*.csv
+data/*.zip
+.env
+venv/
+__pycache__/
+.pytest_cache/
+.ipynb_checkpoints/
