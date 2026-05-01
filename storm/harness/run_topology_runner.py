@@ -9,6 +9,7 @@ import sys
 import csv
 import json
 import time
+from itertools import islice
 from pathlib import Path
 
 # Ensure project root on path
@@ -20,6 +21,7 @@ from storm.bolts.parse_bolt import ParseBolt
 from storm.bolts.district_bolt import DistrictBolt
 from storm.bolts.window_bolt import WindowBolt
 from storm.bolts.anomaly_bolt import AnomalyBolt
+from storm.bolts.alert_bolt import AlertBolt
 
 
 class SimpleTuple:
@@ -27,7 +29,7 @@ class SimpleTuple:
         self.values = values
 
 
-def run_from_csv(csv_path, sample_fraction=0.25, config_path='config/config.yaml', producer=None, output_dir=None):
+def run_from_csv(csv_path, sample_fraction=0.25, config_path='config/config.yaml', producer=None, output_dir=None, persist_to_dbs=False, max_rows=None):
     """
     Run in-process topology on CSV data.
     Args:
@@ -45,6 +47,7 @@ def run_from_csv(csv_path, sample_fraction=0.25, config_path='config/config.yaml
     d = DistrictBolt()
     w = WindowBolt()
     a = AnomalyBolt()
+    alert = AlertBolt() if persist_to_dbs else None
 
     # initialize and ensure safe defaults in case of configuration errors
     try:
@@ -80,24 +83,28 @@ def run_from_csv(csv_path, sample_fraction=0.25, config_path='config/config.yaml
         a.medium = 40
         a.high = 60
 
+    if alert is not None:
+        try:
+            alert.initialize(conf, ctx)
+        except Exception as e:
+            print('AlertBolt.initialize failed:', e)
+            alert = None
+
     alerts = []
     realtime_counts = []
 
-    total = 0
     processed = 0
-    # two-pass streaming: count lines, then process first `limit` rows without loading entire file
-    with open(csv_path, newline='', encoding='utf-8') as fh:
-        # count non-header rows
-        reader = csv.reader(fh)
-        total = sum(1 for _ in reader) - 1
-
-    limit = max(1, int(total * sample_fraction))
-    print(f"CSV rows: {total}, processing ~{limit}")
+    limit = None
+    if max_rows is not None:
+        limit = max(1, int(max_rows))
+        print(f"Processing first {limit} rows from CSV (no full-file prepass)")
+    else:
+        print(f"Processing sample_fraction={sample_fraction} with full-file estimate disabled for speed")
 
     with open(csv_path, newline='', encoding='utf-8') as fh:
         reader = csv.DictReader(fh)
         for i, row in enumerate(reader):
-            if i >= limit:
+            if limit is not None and i >= limit:
                 break
             # Build message matching producer JSON
             msg = json.dumps({
@@ -153,6 +160,11 @@ def run_from_csv(csv_path, sample_fraction=0.25, config_path='config/config.yaml
                             if a_emitted:
                                 for ae in a_emitted:
                                     alerts.append(ae)
+                                    if alert is not None:
+                                        try:
+                                            alert.process(SimpleTuple([ae[0] if isinstance(ae, list) and ae else ae]))
+                                        except Exception:
+                                            pass
                                 a._emitted = []
                         except Exception:
                             pass

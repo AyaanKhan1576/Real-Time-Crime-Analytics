@@ -103,6 +103,22 @@ docker-compose -f docker/docker-compose.yml logs storm-harness
 ✓ Output files written to `logs/` volume (visible as `docker/logs/`)  
 ✓ Anomalies detected and logged  
 
+### **2b. Live Demo Monitor**
+**Purpose**: Show a moving picture of the stack during your presentation.
+
+Run this in a separate terminal while Docker is up:
+```bash
+python scripts/demo_monitor.py
+```
+
+What it shows:
+- current `docker-compose ps` state
+- latest `storm-harness` log lines
+- live Postgres row counts for `realtime_district_counts` and `alerts`
+- Mongo `alert_logs` document count
+
+If you want the database rows to increase during the final Docker run, keep `PERSIST_TO_DBS=1` for `scripts/run_full_integration.py`.
+
 ---
 
 ### **3. Full Kafka → Storm → Postgres/Mongo (Real Storm Cluster)**
@@ -189,16 +205,19 @@ docker-compose -f docker/docker-compose.yml exec kafka kafka-console-consumer --
 
 ### Postgres Verification
 ```bash
-psql "postgresql://crime_user:crime_password@localhost:5432/crime_analytics" -c "SELECT COUNT(*) FROM realtime_district_counts;"
-psql "postgresql://crime_user:crime_password@localhost:5432/crime_analytics" -c "SELECT * FROM alerts LIMIT 5;"
+docker-compose -f docker/docker-compose.yml exec -T postgres psql -U crime_user -d crime_analytics -c "\\dt"
+docker-compose -f docker/docker-compose.yml exec -T postgres psql -U crime_user -d crime_analytics -c "SELECT COUNT(*) FROM realtime_district_counts;"
+docker-compose -f docker/docker-compose.yml exec -T postgres psql -U crime_user -d crime_analytics -c "SELECT * FROM alerts LIMIT 5;"
 ```
 - [ ] realtime_district_counts table has rows
 - [ ] alerts table has rows with severity values
 
+Note: `\\dt` is a psql meta-command, so it must be run by itself or with separate `-c` flags. Do not put SQL statements on the same line after `\\dt`.
+
 ### Mongo Verification
 ```bash
-mongosh "mongodb://localhost:27017/crime_analytics" --eval "db.alert_logs.countDocuments()"
-mongosh "mongodb://localhost:27017/crime_analytics" --eval "db.alert_logs.findOne()"
+docker-compose -f docker/docker-compose.yml exec -T mongo mongosh --eval "db.getSiblingDB('crime_analytics').alert_logs.countDocuments()"
+docker-compose -f docker/docker-compose.yml exec -T mongo mongosh --eval "db.getSiblingDB('crime_analytics').alert_logs.findOne()"
 ```
 - [ ] alert_logs collection has documents
 - [ ] Documents have expected schema (alert_id, severity, timestamp, etc.)

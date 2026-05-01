@@ -2,8 +2,9 @@
 """
 Full integration test: read CSV, run in-process harness, capture outputs to files.
 Environment variables (optional):
-  - SAMPLE_FRACTION: fraction of dataset to process (default: 0.25)
-  - OUTPUT_DIR: where to write outputs (default: ./logs)
+    - SAMPLE_FRACTION: fraction of dataset to process if MAX_ROWS is unset (default: 0.25)
+    - MAX_ROWS: fixed row cap for fast streaming smoke tests (default: 5000)
+    - OUTPUT_DIR: where to write outputs (default: ./logs)
 """
 import os
 import sys
@@ -18,6 +19,9 @@ from storm.harness.run_topology_runner import run_from_csv
 
 def run_full_integration_test():
     sample_fraction = float(os.getenv('SAMPLE_FRACTION', '0.25'))
+    max_rows = os.getenv('MAX_ROWS', '20000')
+    max_rows = int(max_rows) if str(max_rows).strip() else None
+    persist_to_dbs = os.getenv('PERSIST_TO_DBS', '1').strip().lower() not in {'0', 'false', 'no', 'off'}
     output_dir = Path(os.getenv('OUTPUT_DIR', 'logs'))
     output_dir.mkdir(exist_ok=True, parents=True)
 
@@ -27,7 +31,10 @@ def run_full_integration_test():
         sys.exit(1)
 
     print(f'Full integration test: Harness processing + file outputs')
-    print(f'  Sample: {sample_fraction*100}% of dataset')
+    if max_rows is not None:
+        print(f'  Max rows: {max_rows}')
+    else:
+        print(f'  Sample: {sample_fraction*100}% of dataset')
     print(f'  Output: {output_dir}')
 
     # Run the in-process harness
@@ -38,6 +45,8 @@ def run_full_integration_test():
             config_path='config/config.yaml',
             producer=None,
             output_dir=str(output_dir),
+            persist_to_dbs=persist_to_dbs,
+            max_rows=max_rows,
         )
         print('✓ Harness processing completed')
     except Exception as e:

@@ -8,6 +8,7 @@ from collections import defaultdict, deque
 import time
 import os
 import sys
+from datetime import datetime
 
 
 def _load_cfg(config_path):
@@ -30,7 +31,7 @@ class WindowBolt(Bolt):
 
     def process(self, tup):
         district, data = tup.values[0], tup.values[1]
-        now = int(time.time())
+        now = self._event_timestamp(data)
         dq = self.buckets[district]
         dq.append(now)
 
@@ -47,3 +48,14 @@ class WindowBolt(Bolt):
         window_end = now
         self.last_emit[district] = now
         self.emit([district, count, window_start, window_end])
+
+    def _event_timestamp(self, data):
+        value = data.get("date") if isinstance(data, dict) else None
+        if value:
+            text = str(value).strip()
+            for fmt in ("%m/%d/%Y %I:%M:%S %p", "%m/%d/%Y %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+                try:
+                    return int(datetime.strptime(text, fmt).timestamp())
+                except ValueError:
+                    continue
+        return int(time.time())
