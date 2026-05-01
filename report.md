@@ -149,6 +149,10 @@ Start the cluster (background):
 docker compose -f docker/docker-compose.yml up -d
 ```
 
+```bash
+docker compose -f docker/docker-compose.yml down -v
+```
+
 Build submit image (java submit profile):
 ```bash
 docker compose -f docker/docker-compose.yml --profile java-submit build storm-submit-java
