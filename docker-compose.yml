@@ -1,0 +1,187 @@
+name: crime-analytics
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    environment:
+      POSTGRES_DB: crime_analytics
+      POSTGRES_USER: crime_user
+      POSTGRES_PASSWORD: crime_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/postgres_init.sql:/docker-entrypoint-initdb.d/01_postgres_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crime_user -d crime_analytics"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  mongodb:
+    image: mongo:7
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  spark-master:
+    build:
+      context: .
+      dockerfile: docker/Dockerfiles/spark/Dockerfile
+    image: crime-analytics-spark:latest
+    container_name: spark-master
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master", "--host", "spark-master", "--port", "7077", "--webui-port", "8080"]
+    environment:
+      PYTHONPATH: /app
+    ports:
+      - "7077:7077"
+      - "8081:8080"
+    volumes:
+      - .:/app
+    depends_on:
+      - postgres
+
+  spark-worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfiles/spark/Dockerfile
+    image: crime-analytics-spark:latest
+    container_name: spark-worker
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
+    environment:
+      SPARK_WORKER_MEMORY: 2g
+      SPARK_WORKER_CORES: 2
+      PYTHONPATH: /app
+    volumes:
+      - .:/app
+    depends_on:
+      - spark-master
+
+  storm-nimbus:
+    image: storm:2.6.0
+    container_name: storm-nimbus
+    command: ["storm", "nimbus"]
+    depends_on:
+      - zookeeper
+    ports:
+      - "6627:6627"
+    volumes:
+      - ./storm/config/storm.yaml:/conf/storm.yaml:ro
+      - storm_nimbus_data:/data
+
+  storm-supervisor:
+    image: storm:2.6.0
+    container_name: storm-supervisor
+    command: ["storm", "supervisor"]
+    depends_on:
+      - storm-nimbus
+    volumes:
+      - ./storm/config/storm.yaml:/conf/storm.yaml:ro
+      - storm_supervisor_data:/data
+
+  storm-ui:
+    image: storm:2.6.0
+    container_name: storm-ui
+    command: ["storm", "ui"]
+    depends_on:
+      - storm-nimbus
+    ports:
+      - "8088:8080"
+    volumes:
+      - ./storm/config/storm.yaml:/conf/storm.yaml:ro
+
+  streamlit:
+    build:
+      context: .
+      dockerfile: docker/Dockerfiles/app/Dockerfile
+    image: crime-analytics-app:latest
+    container_name: streamlit
+    command: ["streamlit", "run", "dashboard/streamlit_app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+    environment:
+      PYTHONPATH: /app
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+    depends_on:
+      - postgres
+      - mongodb
+
+  kafka-producer:
+    build:
+      context: .
+      dockerfile: docker/Dockerfiles/app/Dockerfile
+    image: crime-analytics-app:latest
+    container_name: kafka-producer
+    profiles:
+      - jobs
+    command: ["python", "/app/kafka/producer.py", "--config", "/app/config/config.yaml"]
+    environment:
+      PYTHONPATH: /app
+    volumes:
+      - .:/app
+    depends_on:
+      - kafka
+
+  mongo-setup:
+    build:
+      context: .
+      dockerfile: docker/Dockerfiles/app/Dockerfile
+    image: crime-analytics-app:latest
+    container_name: mongo-setup
+    profiles:
+      - jobs
+    command: ["python", "/app/db/mongo_setup.py", "/app/config/config.yaml"]
+    environment:
+      PYTHONPATH: /app
+    volumes:
+      - .:/app
+    depends_on:
+      - mongodb
+
+volumes:
+  postgres_data:
+  mongodb_data:
+  storm_nimbus_data:
+  storm_supervisor_data:

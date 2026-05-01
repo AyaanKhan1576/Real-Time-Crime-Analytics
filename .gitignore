@@ -1,9 +1,41 @@
-# Ignore dataset folders and common secrets
-data/raw/
-data/*.csv
-data/*.zip
+# Local environment and editor state
 .env
+.venv/
 venv/
+env/
+.idea/
+.vscode/
+.DS_Store
+
+# Python cache and test artifacts
 __pycache__/
+*.py[cod]
+*.pyo
+*.pyd
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Notebook checkpoints
 .ipynb_checkpoints/
+
+# Build and packaging outputs
+build/
+dist/
+*.egg-info/
+
+# Generated data and exports
+data/*
+!data/README.md
+*.csv
+*.zip
+*.parquet
+*.csv:*
+
+# Logs and temporary files
+*.log
+*.tmp
+*.pid
+*.swp

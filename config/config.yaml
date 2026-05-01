@@ -1,0 +1,74 @@
+app:
+  project_name: "Real-Time Crime Analytics and Intelligent Alert System"
+  environment: "local-docker"
+  mode: "lambda-option-b"
+
+urls:
+  dashboard_base_url: "http://localhost:8501"
+  storm_ui_url: "http://localhost:8088"
+  spark_ui_url: "http://localhost:8081"
+  kafka_bootstrap_external: "localhost:9092"
+  postgres_external_url: "localhost:5432"
+  mongodb_external_url: "localhost:27017"
+
+data:
+  base_path: "/app/data"
+  crime_file: "crimes.csv"
+  arrests_file: "arrests.csv"
+  violence_file: "violence.csv"
+  sex_offenders_file: "sex_offenders.csv"
+  police_stations_file: "police_stations.csv"
+  sample_mode: true
+  crime_sample_rows: 50000
+  other_sample_rows: 10000
+
+kafka:
+  bootstrap_servers: "kafka:9092"
+  topic_crime_events: "crime-events"
+  producer_rate_per_second: 1
+  producer_batch_size: 1
+  producer_retry_count: 3
+
+storm:
+  topology_name: "crime-alert-topology"
+  window_size_seconds: 300
+  slide_interval_seconds: 60
+  anomaly_threshold: 25
+  severity:
+    low_min: 25
+    medium_min: 40
+    high_min: 60
+  alert_deduplication:
+    strategy: "district_window_start_window_end"
+    alert_id_format: "{district}_{window_start}_{window_end}"
+
+postgres:
+  host: "postgres"
+  port: 5432
+  database: "crime_analytics"
+  user: "crime_user"
+  password: "crime_password"
+
+mongodb:
+  host: "mongodb"
+  port: 27017
+  database: "crime_analytics"
+  raw_events_collection: "raw_events"
+  alert_logs_collection: "alert_logs"
+  enable_raw_event_logging: false
+  raw_event_ttl_seconds: 86400
+
+spark:
+  app_name: "crime-batch-analytics"
+  master: "spark://spark-master:7077"
+  shuffle_partitions: 8
+  kmeans_k: 10
+  latest_completed_only: true
+  run_id_format: "batch_YYYYMMDD_HHMMSS"
+  write_mode: "staging_then_publish"
+
+dashboard:
+  refresh_seconds: 5
+  max_live_alerts: 100
+  show_batch_status: true
+  read_latest_completed_batch_only: true
