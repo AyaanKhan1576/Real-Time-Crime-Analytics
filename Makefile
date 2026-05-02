@@ -1,58 +1,69 @@
-.PHONY: up down build logs spark-up spark-run spark-run-15pct run-spark run-spark-15pct run-producer run-storm run-dashboard setup-mongo ps
+.PHONY: up up-detached down build logs ps spark-up spark-run spark-run-15pct run-spark run-spark-15pct run-producer run-storm run-dashboard setup-mongo run-all run-all-15pct validate-streaming logs-producer logs-storm logs-dashboard logs-spark
 
+COMPOSE_FILE ?= docker-compose.yml
 SPARK_CONFIG ?= /app/config/config.yaml
 SPARK_15PCT_CONFIG ?= /app/config/config.spark_15pct.yaml
 
 up:
-	docker compose -f docker-compose.yml up --build
+	docker compose -f $(COMPOSE_FILE) up --build
+
+up-detached:
+	docker compose -f $(COMPOSE_FILE) up -d --build postgres mongodb zookeeper kafka storm-nimbus storm-supervisor storm-ui spark-master spark-worker streamlit
 
 down:
-	docker compose -f docker-compose.yml down
+	docker compose -f $(COMPOSE_FILE) down
 
 build:
-	docker compose -f docker-compose.yml build
+	docker compose -f $(COMPOSE_FILE) build
 
 logs:
-	docker compose -f docker-compose.yml logs -f
+	docker compose -f $(COMPOSE_FILE) logs -f
 
 ps:
-	docker compose -f docker-compose.yml ps
+	docker compose -f $(COMPOSE_FILE) ps
 
 spark-up:
-	docker compose -f docker-compose.yml up -d --build postgres spark-master spark-worker
-	docker compose -f docker-compose.yml up -d --build --no-deps streamlit
+	docker compose -f $(COMPOSE_FILE) up -d --build postgres mongodb spark-master spark-worker streamlit
 
 spark-run:
-	./scripts/run_spark_batch.sh $(SPARK_CONFIG)
+	bash ./scripts/run_spark_batch.sh $(SPARK_CONFIG)
 
 spark-run-15pct:
-	./scripts/run_spark_batch.sh $(SPARK_15PCT_CONFIG)
+	bash ./scripts/run_spark_batch.sh $(SPARK_15PCT_CONFIG)
 
 run-spark:
-	./scripts/run_spark_batch.sh $(SPARK_CONFIG)
+	bash ./scripts/run_spark_batch.sh $(SPARK_CONFIG)
 
 run-spark-15pct:
-	./scripts/run_spark_batch.sh $(SPARK_15PCT_CONFIG)
-
+	bash ./scripts/run_spark_batch.sh $(SPARK_15PCT_CONFIG)
 
 run-dashboard:
-	./scripts/run_dashboard.sh
-
-run-producer:
-	python kafka/producer.py --config config/config.yaml
+	bash ./scripts/run_dashboard.sh
 
 run-storm:
-	@echo "Start the cluster with: docker compose -f docker/docker-compose.yml up -d"
-	@echo "Then submit the topology with: streamparse run storm.topology.crime_alert_topology.CrimeAlertTopology"
+	bash ./scripts/run_storm_topology.sh
 
-run-storm-cluster:
-	docker compose -f docker/docker-compose.yml up -d storm-nimbus storm-supervisor storm-ui
+run-producer:
+	bash ./scripts/run_kafka_producer.sh
 
-run-storm-submit:
-	docker compose -f docker/docker-compose.yml --profile java-submit up -d storm-submit-java
+setup-mongo:
+	bash ./scripts/setup_mongo.sh
 
-run-mongo-setup:
-	python db/mongo_setup.py
+run-all: up-detached setup-mongo run-storm run-producer spark-run run-dashboard
+
+run-all-15pct: up-detached setup-mongo run-storm run-producer spark-run-15pct run-dashboard
 
 validate-streaming:
-	python scripts/validate_streaming.py
+	docker compose -f $(COMPOSE_FILE) run --rm storm-harness
+
+logs-producer:
+	docker compose -f $(COMPOSE_FILE) logs -f kafka-producer
+
+logs-storm:
+	docker compose -f $(COMPOSE_FILE) logs -f storm-nimbus storm-supervisor storm-ui storm-submit-java
+
+logs-dashboard:
+	docker compose -f $(COMPOSE_FILE) logs -f streamlit
+
+logs-spark:
+	tail -f "$$(ls -t logs/spark/*.log | head -1)"

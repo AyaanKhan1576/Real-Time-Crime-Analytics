@@ -149,7 +149,8 @@ def load_arrests(spark: SparkSession, config: dict[str, Any]) -> DataFrame:
     data_config = config["data"]
     path = _resolve_data_path(data_config, "arrests_file")
     df = _read_csv(spark, path, get_arrests_schema())
-    return _sample_if_enabled(df, data_config, int(data_config["other_sample_rows"]))
+    row_limit = int(data_config.get("arrests_sample_rows", data_config["other_sample_rows"]))
+    return _sample_if_enabled(df, data_config, row_limit)
 
 
 def load_violence(spark: SparkSession, config: dict[str, Any]) -> DataFrame:
@@ -171,7 +172,8 @@ def load_violence(spark: SparkSession, config: dict[str, Any]) -> DataFrame:
     data_config = config["data"]
     path = _resolve_data_path(data_config, "violence_file")
     df = _read_csv(spark, path, get_violence_schema())
-    return _sample_if_enabled(df, data_config, int(data_config["other_sample_rows"]))
+    row_limit = int(data_config.get("violence_sample_rows", data_config["other_sample_rows"]))
+    return _sample_if_enabled(df, data_config, row_limit)
 
 
 def load_sex_offenders(spark: SparkSession, config: dict[str, Any]) -> DataFrame:
@@ -193,7 +195,8 @@ def load_sex_offenders(spark: SparkSession, config: dict[str, Any]) -> DataFrame
     data_config = config["data"]
     path = _resolve_data_path(data_config, "sex_offenders_file")
     df = _read_csv(spark, path, get_sex_offenders_schema())
-    return _sample_if_enabled(df, data_config, int(data_config["other_sample_rows"]))
+    row_limit = int(data_config.get("sex_offenders_sample_rows", data_config["other_sample_rows"]))
+    return _sample_if_enabled(df, data_config, row_limit)
 
 
 def load_police_stations(spark: SparkSession, config: dict[str, Any]) -> DataFrame:
@@ -214,4 +217,6 @@ def load_police_stations(spark: SparkSession, config: dict[str, Any]) -> DataFra
     """
     data_config = config["data"]
     path = _resolve_data_path(data_config, "police_stations_file")
-    return _read_csv(spark, path, get_police_stations_schema())
+    df = _read_csv(spark, path, get_police_stations_schema())
+    row_limit = int(data_config.get("police_stations_sample_rows", data_config["other_sample_rows"]))
+    return _sample_if_enabled(df, data_config, row_limit)

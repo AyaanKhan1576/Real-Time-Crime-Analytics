@@ -1,144 +1,20 @@
-version: '3.8'
-services:
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.4.0
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-    ports:
-      - "2181:2181"
+Obsolete merge reference.
 
-  kafka:
-    build:
-      context: ../
-      dockerfile: docker/Dockerfiles/kafka/Dockerfile
-    depends_on:
-      - zookeeper
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-    ports:
-      - "9092:9092"
+The runnable Docker Compose file is now:
 
-  storm-nimbus:
-    build:
-      context: ../
-      dockerfile: docker/Dockerfiles/storm-cluster/Dockerfile
-    depends_on:
-      - zookeeper
-    command: storm nimbus
-    ports:
-      - "6627:6627"
+  docker-compose.yml
 
-  storm-supervisor:
-    build:
-      context: ../
-      dockerfile: docker/Dockerfiles/storm-cluster/Dockerfile
-    depends_on:
-      - storm-nimbus
-      - zookeeper
-    command: storm supervisor
+The legacy compose draft that previously lived in this file used local Windows
+paths, older service names, and a different data folder. It has intentionally
+been replaced so nobody uses stale per-machine volumes.
 
-  storm-ui:
-    build:
-      context: ../
-      dockerfile: docker/Dockerfiles/storm-cluster/Dockerfile
-    depends_on:
-      - storm-nimbus
-    command: storm ui
-    ports:
-      - "8080:8080"
+For machine-specific host paths, create a local .env file from .env.example:
 
-  postgres:
-    image: postgres:14
-    environment:
-      POSTGRES_DB: crime_analytics
-      POSTGRES_USER: crime_user
-      POSTGRES_PASSWORD: crime_password
-    volumes:
-      - "D:/university/SEMESTER 8/big data/crime analytics/db:/docker-entrypoint-initdb.d:ro"
-    ports:
-      - "5432:5432"
+  cp .env.example .env
 
-  mongo:
-    image: mongo:6
-    networks:
-      default:
-        aliases:
-          - mongodb
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongo_data:/data/db
+Then edit:
 
-  mongo-setup:
-    build:
-      context: ../
-      dockerfile: docker/Dockerfiles/storm/Dockerfile
-    depends_on:
-      - mongo
-    environment:
-      MONGODB_HOST: mongodb
-      MONGODB_PORT: 27017
-      MONGODB_DB: crime_analytics
-    command: python db/mongo_setup.py
+  CRIME_ANALYTICS_PROJECT_ROOT=.
+  CRIME_ANALYTICS_DATA_DIR=./data
 
-  storm-harness:
-    profiles:
-      - harness
-    build:
-      context: ../
-      dockerfile: docker/Dockerfiles/storm/Dockerfile
-    depends_on:
-      kafka:
-        condition: service_started
-      postgres:
-        condition: service_started
-      mongo-setup:
-        condition: service_completed_successfully
-    working_dir: /app
-    volumes:
-      - ../data/raw:/app/data/raw:ro
-      - harness_logs:/app/logs
-    environment:
-      PYTHONUNBUFFERED: 1
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_USER: crime_user
-      POSTGRES_PASSWORD: crime_password
-      POSTGRES_DB: crime_analytics
-      MONGODB_HOST: mongo
-      MONGODB_PORT: 27017
-      MONGODB_DB: crime_analytics
-    command: >
-      bash -c "PERSIST_TO_DBS=1 MAX_ROWS=5000 STORM__ANOMALY_THRESHOLD=1 STORM__SEVERITY__LOW_MIN=1 STORM__SEVERITY__MEDIUM_MIN=2 STORM__SEVERITY__HIGH_MIN=3 OUTPUT_DIR=/app/logs python scripts/run_full_integration.py 2>&1 | tee logs/harness_output.log"
-
-  storm-submit-java:
-    profiles:
-      - java-submit
-    build:
-      context: ../
-      dockerfile: java-topology/Dockerfile
-    depends_on:
-      kafka:
-        condition: service_started
-      postgres:
-        condition: service_started
-      storm-nimbus:
-        condition: service_started
-      storm-supervisor:
-        condition: service_started
-      storm-ui:
-        condition: service_started
-      mongo-setup:
-        condition: service_completed_successfully
-    environment:
-      PYTHONUNBUFFERED: 1
-
-volumes:
-  mongo_data:
-  harness_logs:
+Inside containers, code should continue to use /app and /app/data.

@@ -2,284 +2,81 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "build-storm-harness",
+			"label": "run-all-15pct",
 			"type": "shell",
-			"command": "docker",
-			"args": [
-				"compose",
-				"-f",
-				"docker/docker-compose.yml",
-				"build",
-				"storm-harness"
-			],
+			"command": "make run-all-15pct",
 			"isBackground": false,
-			"problemMatcher": [
-				"$tsc"
-			],
-			"group": "build"
+			"problemMatcher": []
 		},
 		{
-			"label": "replay-five-rows",
+			"label": "run-all-full",
 			"type": "shell",
-			"command": "docker",
-			"args": [
-				"compose",
-				"-f",
-				"docker/docker-compose.yml",
-				"run",
-				"--rm",
-				"-e",
-				"DATA__BASE_PATH=/app/data/raw",
-				"-e",
-				"DATA__CRIME_FILE=Crimes_-_2001_to_Present_20260501.csv",
-				"-e",
-				"KAFKA__PRODUCER_RATE_PER_SECOND=0",
-				"storm-harness",
-				"python",
-				"kafka/producer.py",
-				"--config",
-				"config/config.yaml",
-				"--max-rows",
-				"5"
-			],
+			"command": "make run-all",
 			"isBackground": false,
-			"problemMatcher": [
-				"$tsc"
-			]
+			"problemMatcher": []
 		},
 		{
-			"label": "full-replay",
+			"label": "spark-run-15pct",
 			"type": "shell",
-			"command": "docker",
-			"args": [
-				"compose",
-				"-f",
-				"docker/docker-compose.yml",
-				"run",
-				"--rm",
-				"-e",
-				"DATA__BASE_PATH=/app/data/raw",
-				"-e",
-				"DATA__CRIME_FILE=Crimes_-_2001_to_Present_20260501.csv",
-				"-e",
-				"KAFKA__PRODUCER_RATE_PER_SECOND=0",
-				"storm-harness",
-				"python",
-				"kafka/producer.py",
-				"--config",
-				"config/config.yaml"
-			],
+			"command": "make spark-run-15pct",
 			"isBackground": false,
-			"problemMatcher": [
-				"$tsc"
-			]
+			"problemMatcher": []
 		},
 		{
-			"label": "check-counts",
+			"label": "spark-run-full",
 			"type": "shell",
-			"command": "docker",
-			"args": [
-				"exec",
-				"docker-postgres-1",
-				"psql",
-				"-U",
-				"crime_user",
-				"-d",
-				"crime_analytics",
-				"-c",
-				"select 'alerts' as table_name, count(*) from alerts union all select 'realtime_district_counts', count(*) from realtime_district_counts;"
-			],
+			"command": "make spark-run",
 			"isBackground": false,
-			"problemMatcher": [
-				"$tsc"
-			]
+			"problemMatcher": []
 		},
 		{
-			"label": "check-counts-bash",
+			"label": "run-storm",
 			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"docker exec docker-postgres-1 psql -U crime_user -d crime_analytics -c \"select 'alerts' as table_name, count(*) from alerts union all select 'realtime_district_counts', count(*) from realtime_district_counts;\""
-			],
+			"command": "make run-storm",
 			"isBackground": false,
-			"problemMatcher": [
-				"$tsc"
-			]
+			"problemMatcher": []
 		},
 		{
-			"label": "storm-logs",
+			"label": "run-producer",
 			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"docker compose -f docker/docker-compose.yml logs --no-color --tail 120 storm-supervisor storm-submit-java"
-			],
+			"command": "make run-producer",
 			"isBackground": false,
-			"problemMatcher": [
-				"$tsc"
-			]
+			"problemMatcher": []
 		},
 		{
-			"label": "supervisor-errors",
+			"label": "logs-producer",
 			"type": "shell",
-			"command": "bash",
-			"args": [
-				"-lc",
-				"docker compose -f docker/docker-compose.yml logs --no-color --tail 200 storm-supervisor | grep -iE 'worker|error|exception|launch|slot|assign'"
-			],
-			"isBackground": false,
-			"problemMatcher": [
-				"$tsc"
-			]
+			"command": "make logs-producer",
+			"isBackground": true,
+			"problemMatcher": []
 		},
 		{
-			"label": "supervisor-filter",
+			"label": "logs-storm",
 			"type": "shell",
-			"command": "docker",
-			"args": [
-				"compose",
-				"-f",
-				"docker/docker-compose.yml",
-				"logs",
-				"--no-color",
-				"--tail",
-				"200",
-				"storm-supervisor"
-			],
-			"isBackground": false,
-			"problemMatcher": [
-				"$tsc"
-			]
+			"command": "make logs-storm",
+			"isBackground": true,
+			"problemMatcher": []
 		},
 		{
-			"label": "build-storm-submit",
+			"label": "logs-dashboard",
 			"type": "shell",
-			"command": "docker",
-			"args": [
-				"compose",
-				"-f",
-				"docker/docker-compose.yml",
-				"--profile",
-				"java-submit",
-				"build",
-				"storm-submit-java"
-			],
-			"isBackground": false,
-			"problemMatcher": [
-				"$tsc"
-			]
+			"command": "make logs-dashboard",
+			"isBackground": true,
+			"problemMatcher": []
 		},
 		{
-			"label": "resubmit-topology",
+			"label": "check-streaming-counts",
 			"type": "shell",
-			"command": "docker",
-			"args": [
-				"compose",
-				"-f",
-				"docker/docker-compose.yml",
-				"--profile",
-				"java-submit",
-				"up",
-				"-d",
-				"--force-recreate",
-				"storm-submit-java"
-			],
+			"command": "docker exec postgres psql -U crime_user -d crime_analytics -c \"select 'alerts' as table_name, count(*) from alerts union all select 'realtime_district_counts', count(*) from realtime_district_counts;\"",
 			"isBackground": false,
-			"problemMatcher": [
-				"$tsc"
-			]
-		},
-		{
-			"label": "submit-logs",
-			"type": "shell",
-			"command": "docker",
-			"args": [
-				"compose",
-				"-f",
-				"docker/docker-compose.yml",
-				"logs",
-				"--no-color",
-				"--tail",
-				"120",
-				"storm-submit-java"
-			],
-			"isBackground": false,
-			"problemMatcher": [
-				"$tsc"
-			]
-		},
-		{
-			"label": "kill-topology",
-			"type": "shell",
-			"command": "docker",
-			"args": [
-				"exec",
-				"docker-storm-nimbus-1",
-				"storm",
-				"kill",
-				"crime-alert-topology",
-				"-w",
-				"1"
-			],
-			"isBackground": false,
-			"problemMatcher": [
-				"$tsc"
-			]
-		},
-		{
-			"label": "resubmit-topology-fixed",
-			"type": "shell",
-			"command": "docker",
-			"args": [
-				"compose",
-				"-f",
-				"docker/docker-compose.yml",
-				"--profile",
-				"java-submit",
-				"up",
-				"-d",
-				"--force-recreate",
-				"storm-submit-java"
-			],
-			"isBackground": false,
-			"problemMatcher": [
-				"$tsc"
-			]
-		},
-		{
-			"label": "submit-logs-after-resubmit",
-			"type": "shell",
-			"command": "docker",
-			"args": [
-				"compose",
-				"-f",
-				"docker/docker-compose.yml",
-				"logs",
-				"--no-color",
-				"--tail",
-				"80",
-				"storm-submit-java"
-			],
-			"isBackground": false,
-			"problemMatcher": [
-				"$tsc"
-			]
+			"problemMatcher": []
 		},
 		{
 			"label": "storm-list",
 			"type": "shell",
-			"command": "docker",
-			"args": [
-				"exec",
-				"docker-storm-nimbus-1",
-				"storm",
-				"list"
-			],
+			"command": "docker exec storm-nimbus storm list",
 			"isBackground": false,
-			"problemMatcher": [
-				"$tsc"
-			]
+			"problemMatcher": []
 		}
 	]
 }

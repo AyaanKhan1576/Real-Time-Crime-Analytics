@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-OUT_DIR="${1:-data/raw}"
+OUT_DIR="${1:-data}"
 MAX_ROWS="${MAX_ROWS:-0}"
 USE_API="${USE_API:-0}"
 FORCE="${FORCE:-0}"
@@ -10,10 +10,10 @@ APP_TOKEN="${SOCRATA_APP_TOKEN:-}"
 mkdir -p "$OUT_DIR"
 
 DATASETS=(
-  "crimes|ijzp-q8t2|crimes_2001_to_present.csv"
+  "crimes|ijzp-q8t2|crimes.csv"
   "police_stations|z8bn-74gv|police_stations.csv"
   "arrests|dpt3-jri9|arrests.csv"
-  "violence_reduction|gumc-mgzr|violence_reduction_victims.csv"
+  "violence_reduction|gumc-mgzr|violence.csv"
   "sex_offenders|vc9r-bqvy|sex_offenders.csv"
 )
 

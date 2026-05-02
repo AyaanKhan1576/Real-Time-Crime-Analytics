@@ -19,6 +19,36 @@ from datetime import datetime
 from config.config_loader import load_config
 
 
+FALLBACK_CRIME_FILE = "Crimes_-_2001_to_Present_20260501.csv"
+
+
+def resolve_crime_file(data_cfg):
+    base_path = data_cfg.get("base_path", "data")
+    configured_file = data_cfg.get("crime_file", "crimes.csv")
+    candidates = [
+        os.path.join(base_path, configured_file),
+        os.path.join(os.path.dirname(__file__), "..", "data", configured_file),
+        os.path.join(os.path.dirname(__file__), "..", "data", "raw", configured_file),
+        os.path.join(base_path, FALLBACK_CRIME_FILE),
+        os.path.join(os.path.dirname(__file__), "..", "data", FALLBACK_CRIME_FILE),
+        os.path.join(os.path.dirname(__file__), "..", "data", "raw", FALLBACK_CRIME_FILE),
+    ]
+    for candidate in candidates:
+        normalized = os.path.normpath(candidate)
+        if os.path.exists(normalized):
+            return normalized
+    return os.path.normpath(candidates[0])
+
+
+def normalize_district(value):
+    district = str(value or "").strip()
+    if not district:
+        return "UNKNOWN"
+    if district.endswith(".0"):
+        district = district[:-2]
+    return district.zfill(3) if district.isdigit() else district
+
+
 def as_bool(value):
     if value is None:
         return False
@@ -67,7 +97,7 @@ def parse_row(row):
         "date": str(date_value).strip(),
         "block": str(block_value).strip(),
         "primary_type": str(primary_type).strip(),
-        "district": str(district).strip() if district is not None and str(district).strip() else "UNKNOWN",
+        "district": normalize_district(district),
         "arrest": as_bool(arrest_value),
         "latitude": as_float(latitude),
         "longitude": as_float(longitude),
@@ -123,19 +153,7 @@ def run_local_pipeline(config_path, max_rows=None, out_dir="outputs", rate=0):
     data_cfg = cfg.get("data", {})
     storm_cfg = cfg.get("storm", {})
 
-    crime_file = os.path.join(data_cfg.get("base_path", "data"), data_cfg.get("crime_file"))
-    if not os.path.exists(crime_file):
-        # fallback to repo data/raw folder
-        crime_file = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "data", "raw", data_cfg.get("crime_file")))
-
-    # If the configured filename is not present, try to find any sensible crime CSV in data/raw
-    if not os.path.exists(crime_file):
-        raw_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "data", "raw"))
-        if os.path.isdir(raw_dir):
-            for f in os.listdir(raw_dir):
-                if f.lower().endswith('.csv') and 'crime' in f.lower():
-                    crime_file = os.path.join(raw_dir, f)
-                    break
+    crime_file = resolve_crime_file(data_cfg)
 
     if not os.path.exists(crime_file):
         raise FileNotFoundError(f"Crime file not found: {crime_file}")
@@ -168,7 +186,7 @@ def run_local_pipeline(config_path, max_rows=None, out_dir="outputs", rate=0):
                 continue
 
             # DistrictBolt
-            district = str(msg.get('district') or 'UNKNOWN').strip() or 'UNKNOWN'
+            district = normalize_district(msg.get('district'))
 
             # WindowBolt ingest and possibly emit
             emit = wm.ingest(district)

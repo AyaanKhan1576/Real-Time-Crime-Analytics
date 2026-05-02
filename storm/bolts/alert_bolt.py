@@ -21,6 +21,15 @@ def _load_cfg(config_path):
     return load_config(config_path)
 
 
+def normalize_district(value):
+    district = str(value or "").strip()
+    if not district:
+        return "UNKNOWN"
+    if district.endswith(".0"):
+        district = district[:-2]
+    return district.zfill(3) if district.isdigit() else district
+
+
 class AlertBolt(Bolt):
     def initialize(self, conf, ctx):
         cfg_path = conf.get("config_path", "config/config.yaml")
@@ -44,7 +53,7 @@ class AlertBolt(Bolt):
 
     def process(self, tup):
         anomaly = tup.values[0]
-        district = str(anomaly["district"]) if anomaly.get("district") is not None else "UNKNOWN"
+        district = normalize_district(anomaly.get("district"))
         window_start_ts = int(anomaly["window_start"])
         window_end_ts = int(anomaly["window_end"])
         event_count = int(anomaly["event_count"])
