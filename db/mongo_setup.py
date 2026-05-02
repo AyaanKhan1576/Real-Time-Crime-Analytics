@@ -1,6 +1,7 @@
 from pymongo import ASCENDING, DESCENDING, MongoClient
 import os
 import sys
+import time
 
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -10,12 +11,28 @@ if PROJECT_ROOT not in sys.path:
 from config.config_loader import load_config
 
 
+def cfg_value(mongo_cfg, key, env_name, default):
+    return os.getenv(env_name) or mongo_cfg.get(key, default)
+
+
 def main() -> None:
     cfg = load_config("config/config.yaml")
     mongo_cfg = cfg.get("mongodb", {})
 
-    client = MongoClient(mongo_cfg.get("host", "mongodb"), int(mongo_cfg.get("port", 27017)))
-    db = client[mongo_cfg.get("database", "crime_analytics")]
+    host = cfg_value(mongo_cfg, "host", "MONGODB_HOST", "mongodb")
+    port = int(cfg_value(mongo_cfg, "port", "MONGODB_PORT", 27017))
+    database = cfg_value(mongo_cfg, "database", "MONGODB_DB", "crime_analytics")
+    client = MongoClient(host, port, serverSelectionTimeoutMS=2000)
+    for attempt in range(1, 31):
+        try:
+            client.admin.command("ping")
+            break
+        except Exception:
+            if attempt == 30:
+                raise
+            time.sleep(1)
+
+    db = client[database]
 
     raw_name = mongo_cfg.get("raw_events_collection", "raw_events")
     alert_name = mongo_cfg.get("alert_logs_collection", "alert_logs")

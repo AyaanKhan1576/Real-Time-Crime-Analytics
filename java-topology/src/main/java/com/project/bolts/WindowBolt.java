@@ -7,15 +7,10 @@ import org.apache.storm.tuple.Fields;
 import org.apache.storm.tuple.Tuple;
 import org.apache.storm.tuple.Values;
 
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
 import java.util.ArrayDeque;
-import java.util.Date;
 import java.util.Deque;
 import java.util.HashMap;
-import java.util.Locale;
 import java.util.Map;
-import java.util.TimeZone;
 
 public class WindowBolt extends BaseRichBolt {
     private final int windowSizeSeconds;
@@ -39,7 +34,7 @@ public class WindowBolt extends BaseRichBolt {
         String district = tuple.getStringByField("district");
         @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) tuple.getValueByField("data");
-        long eventTs = eventTimestamp(data.get("date"));
+        long eventTs = processingTimestamp(data);
 
         Deque<Long> bucket = buckets.containsKey(district) ? buckets.get(district) : new ArrayDeque<Long>();
         bucket.addLast(eventTs);
@@ -61,29 +56,10 @@ public class WindowBolt extends BaseRichBolt {
         collector.ack(tuple);
     }
 
-    private long eventTimestamp(Object value) {
-        String text = value == null ? null : String.valueOf(value).trim();
-        if (text != null && !text.isEmpty()) {
-            String[] patterns = new String[] {
-                    "MM/dd/yyyy hh:mm:ss a",
-                    "MM/dd/yyyy HH:mm:ss",
-                    "yyyy-MM-dd'T'HH:mm:ss",
-                    "yyyy-MM-dd HH:mm:ss"
-            };
-            for (String pattern : patterns) {
-                try {
-                    SimpleDateFormat sdf = new SimpleDateFormat(pattern, Locale.US);
-                    sdf.setLenient(true);
-                    sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
-                    Date parsed = sdf.parse(text);
-                    if (parsed != null) {
-                        return parsed.getTime() / 1000L;
-                    }
-                } catch (ParseException ignored) {
-                }
-            }
-        }
-        return System.currentTimeMillis() / 1000L;
+    private long processingTimestamp(Map<String, Object> data) {
+        long now = System.currentTimeMillis() / 1000L;
+        data.put("processed_at_epoch", now);
+        return now;
     }
 
     @Override

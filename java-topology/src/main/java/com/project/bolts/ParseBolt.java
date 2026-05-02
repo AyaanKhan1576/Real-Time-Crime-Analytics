@@ -2,7 +2,6 @@ package com.project.bolts;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.apache.storm.topology.BasicOutputCollector;
 import org.apache.storm.topology.OutputFieldsDeclarer;
 import org.apache.storm.topology.base.BaseRichBolt;
 import org.apache.storm.tuple.Fields;
@@ -11,7 +10,6 @@ import org.apache.storm.tuple.Values;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
 import java.util.Map;
 
 public class ParseBolt extends BaseRichBolt {
@@ -45,9 +43,9 @@ public class ParseBolt extends BaseRichBolt {
             }
 
             data.put("district", normalizeDistrict(data.get("district")));
-            data.put("arrest", asBoolean(data.get("arrest")));
-            data.put("latitude", asDouble(data.get("latitude")));
-            data.put("longitude", asDouble(data.get("longitude")));
+            data.put("arrest", parseBoolean(data.get("arrest")));
+            data.put("latitude", parseDouble(data.get("latitude")));
+            data.put("longitude", parseDouble(data.get("longitude")));
 
             collector.emit(new Values(data));
             collector.ack(tuple);
@@ -58,10 +56,20 @@ public class ParseBolt extends BaseRichBolt {
     }
 
     private boolean hasRequiredFields(Map<String, Object> data) {
-        return data.get("case_number") != null
-                && data.get("date") != null
-                && data.get("block") != null
-                && data.get("primary_type") != null;
+        return hasText(data, "case_number")
+                && hasText(data, "date")
+                && hasText(data, "block")
+                && hasText(data, "primary_type")
+                && data.containsKey("district")
+                && data.containsKey("arrest")
+                && data.get("arrest") != null
+                && hasText(data, "latitude")
+                && hasText(data, "longitude");
+    }
+
+    private boolean hasText(Map<String, Object> data, String fieldName) {
+        Object value = data.get(fieldName);
+        return value != null && !String.valueOf(value).trim().isEmpty();
     }
 
     private String normalizeDistrict(Object value) {
@@ -69,27 +77,25 @@ public class ParseBolt extends BaseRichBolt {
         return district.isEmpty() ? "UNKNOWN" : district;
     }
 
-    private boolean asBoolean(Object value) {
-        if (value == null) {
-            return false;
+    private boolean parseBoolean(Object value) {
+        if (value instanceof Boolean) {
+            return (Boolean) value;
         }
         String text = String.valueOf(value).trim().toLowerCase();
-        return text.equals("true") || text.equals("1") || text.equals("y") || text.equals("yes") || text.equals("t");
+        if (text.equals("true") || text.equals("1") || text.equals("y") || text.equals("yes") || text.equals("t")) {
+            return true;
+        }
+        if (text.equals("false") || text.equals("0") || text.equals("n") || text.equals("no") || text.equals("f")) {
+            return false;
+        }
+        throw new IllegalArgumentException("invalid arrest value");
     }
 
-    private double asDouble(Object value) {
-        try {
-            if (value == null) {
-                return 0.0d;
-            }
-            String text = String.valueOf(value).trim();
-            if (text.isEmpty()) {
-                return 0.0d;
-            }
-            return Double.parseDouble(text);
-        } catch (Exception ex) {
-            return 0.0d;
+    private double parseDouble(Object value) {
+        if (value instanceof Number) {
+            return ((Number) value).doubleValue();
         }
+        return Double.parseDouble(String.valueOf(value).trim());
     }
 
     @Override

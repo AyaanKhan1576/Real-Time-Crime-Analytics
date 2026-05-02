@@ -74,6 +74,18 @@ services:
     volumes:
       - mongo_data:/data/db
 
+  mongo-setup:
+    build:
+      context: ../
+      dockerfile: docker/Dockerfiles/storm/Dockerfile
+    depends_on:
+      - mongo
+    environment:
+      MONGODB_HOST: mongodb
+      MONGODB_PORT: 27017
+      MONGODB_DB: crime_analytics
+    command: python db/mongo_setup.py
+
   storm-harness:
     profiles:
       - harness
@@ -81,9 +93,12 @@ services:
       context: ../
       dockerfile: docker/Dockerfiles/storm/Dockerfile
     depends_on:
-      - kafka
-      - postgres
-      - mongo
+      kafka:
+        condition: service_started
+      postgres:
+        condition: service_started
+      mongo-setup:
+        condition: service_completed_successfully
     working_dir: /app
     volumes:
       - ../data/raw:/app/data/raw:ro
@@ -109,21 +124,20 @@ services:
       context: ../
       dockerfile: java-topology/Dockerfile
     depends_on:
-      - kafka
-      - storm-nimbus
-      - storm-supervisor
-      - storm-ui
+      kafka:
+        condition: service_started
+      postgres:
+        condition: service_started
+      storm-nimbus:
+        condition: service_started
+      storm-supervisor:
+        condition: service_started
+      storm-ui:
+        condition: service_started
+      mongo-setup:
+        condition: service_completed_successfully
     environment:
       PYTHONUNBUFFERED: 1
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_USER: crime_user
-      POSTGRES_PASSWORD: crime_password
-      POSTGRES_DB: crime_analytics
-      MONGODB_HOST: mongodb
-      MONGODB_PORT: 27017
-      MONGODB_DB: crime_analytics
 
 volumes:
   mongo_data:

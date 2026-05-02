@@ -39,6 +39,7 @@ public class AlertBolt extends BaseRichBolt {
     private Connection connection;
     private MongoClient mongoClient;
     private MongoCollection<Document> alertLogsCollection;
+    private org.apache.storm.task.OutputCollector collector;
 
     public AlertBolt(String postgresHost, int postgresPort, String postgresDatabase, String postgresUser, String postgresPassword,
                      String mongoHost, int mongoPort, String mongoDatabase, String mongoAlertLogsCollection) {
@@ -55,6 +56,7 @@ public class AlertBolt extends BaseRichBolt {
 
     @Override
     public void prepare(java.util.Map stormConf, TopologyContext context, org.apache.storm.task.OutputCollector collector) {
+        this.collector = collector;
         try {
             Class.forName("org.postgresql.Driver");
             String jdbcUrl = "jdbc:postgresql://" + postgresHost + ":" + postgresPort + "/" + postgresDatabase;
@@ -137,6 +139,8 @@ public class AlertBolt extends BaseRichBolt {
                 LOG.warn("Mongo alert write failed for {}", alertId, ex);
             }
         }
+
+        collector.ack(tuple);
     }
 
     private String normalizeDistrict(Object value) {
