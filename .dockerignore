@@ -1,4 +1,11 @@
 .git
+.venv
+__pycache__
+*.pyc
+logs
+outputs
+data/raw
+*.log.git
 .gitignore
 .idea
 .vscode

@@ -1,0 +1,7 @@
+storm.zookeeper.servers:
+  - "zookeeper"
+
+nimbus.seeds:
+  - "storm-nimbus"
+
+storm.local.dir: "/tmp/storm"

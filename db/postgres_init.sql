@@ -197,6 +197,8 @@ CREATE TABLE IF NOT EXISTS correlations_temp (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Speed layer tables (Person 2 ownership)
+
 CREATE TABLE IF NOT EXISTS alerts (
     id SERIAL PRIMARY KEY,
     alert_id VARCHAR(200) UNIQUE NOT NULL,
@@ -232,6 +234,9 @@ CREATE TABLE IF NOT EXISTS realtime_district_counts (
     event_count BIGINT NOT NULL,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_realtime_counts_window
+ON realtime_district_counts(district, window_start, window_end);
 
 CREATE INDEX IF NOT EXISTS idx_realtime_counts_district
 ON realtime_district_counts(district);

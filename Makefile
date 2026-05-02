@@ -34,14 +34,25 @@ run-spark:
 run-spark-15pct:
 	./scripts/run_spark_batch.sh $(SPARK_15PCT_CONFIG)
 
-run-producer:
-	./scripts/run_kafka_producer.sh
-
-run-storm:
-	./scripts/run_storm_topology.sh
 
 run-dashboard:
 	./scripts/run_dashboard.sh
 
-setup-mongo:
-	./scripts/setup_mongo.sh
+run-producer:
+	python kafka/producer.py --config config/config.yaml
+
+run-storm:
+	@echo "Start the cluster with: docker compose -f docker/docker-compose.yml up -d"
+	@echo "Then submit the topology with: streamparse run storm.topology.crime_alert_topology.CrimeAlertTopology"
+
+run-storm-cluster:
+	docker compose -f docker/docker-compose.yml up -d storm-nimbus storm-supervisor storm-ui
+
+run-storm-submit:
+	docker compose -f docker/docker-compose.yml --profile java-submit up -d storm-submit-java
+
+run-mongo-setup:
+	python db/mongo_setup.py
+
+validate-streaming:
+	python scripts/validate_streaming.py

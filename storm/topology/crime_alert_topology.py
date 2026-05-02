@@ -1,8 +1,13 @@
 """
-Topology skeleton (Python) for streamparse or illustrative purposes.
-Replace with actual streamparse/Java topology when implementing.
+Streamparse topology for the streaming speed layer.
+Kafka event spout feeds the Parse -> District -> Window -> Anomaly -> Alert chain.
 """
-from streamparse import Topology
+try:
+    from streamparse import Topology
+except Exception:
+    class Topology:
+        pass
+from storm.spouts.kafka_spout import CrimeEventSpout
 from storm.bolts.parse_bolt import ParseBolt
 from storm.bolts.district_bolt import DistrictBolt
 from storm.bolts.window_bolt import WindowBolt
@@ -11,7 +16,8 @@ from storm.bolts.alert_bolt import AlertBolt
 
 
 class CrimeAlertTopology(Topology):
-    parse = ParseBolt.spec()
+    events = CrimeEventSpout.spec()
+    parse = ParseBolt.spec(inputs=[events])
     district = DistrictBolt.spec(inputs=[parse])
     window = WindowBolt.spec(inputs=[district])
     anomaly = AnomalyBolt.spec(inputs=[window])

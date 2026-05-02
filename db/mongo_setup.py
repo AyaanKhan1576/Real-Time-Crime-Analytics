@@ -1,60 +1,55 @@
-"""
-Module: mongo_setup.py
-Description: Creates MongoDB indexes for raw streamed events and alert logs.
-"""
-
-from __future__ import annotations
-
-import logging
-import sys
-from pathlib import Path
-
 from pymongo import ASCENDING, DESCENDING, MongoClient
-
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from common.config import load_config
-
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+import os
+import sys
+import time
 
 
-def setup_mongodb(config_path: str | None = None) -> None:
-    """
-    Create required MongoDB indexes.
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
-    Parameters
-    ----------
-    config_path : str | None
-        Optional path to config.yaml.
-    """
-    config = load_config(config_path)
-    mongo_config = config["mongodb"]
-    client = MongoClient(
-        host=mongo_config["host"],
-        port=int(mongo_config["port"]),
-        serverSelectionTimeoutMS=10000,
-    )
-    database = client[mongo_config["database"]]
+from config.config_loader import load_config
 
-    alert_logs = database[mongo_config["alert_logs_collection"]]
-    alert_logs.create_index([("district", ASCENDING)])
-    alert_logs.create_index([("timestamp", DESCENDING)])
-    alert_logs.create_index([("alert_id", ASCENDING)], unique=True)
 
-    raw_events = database[mongo_config["raw_events_collection"]]
-    if mongo_config.get("enable_raw_event_logging", False):
-        raw_events.create_index(
-            [("ingested_at", ASCENDING)],
-            expireAfterSeconds=int(mongo_config["raw_event_ttl_seconds"]),
-            name="raw_events_ttl",
-        )
-    else:
-        raw_events.create_index([("ingested_at", ASCENDING)])
+def cfg_value(mongo_cfg, key, env_name, default):
+    return os.getenv(env_name) or mongo_cfg.get(key, default)
 
-    logger.info("MongoDB indexes created successfully")
+
+def main() -> None:
+    cfg = load_config("config/config.yaml")
+    mongo_cfg = cfg.get("mongodb", {})
+
+    host = cfg_value(mongo_cfg, "host", "MONGODB_HOST", "mongodb")
+    port = int(cfg_value(mongo_cfg, "port", "MONGODB_PORT", 27017))
+    database = cfg_value(mongo_cfg, "database", "MONGODB_DB", "crime_analytics")
+    client = MongoClient(host, port, serverSelectionTimeoutMS=2000)
+    for attempt in range(1, 31):
+        try:
+            client.admin.command("ping")
+            break
+        except Exception:
+            if attempt == 30:
+                raise
+            time.sleep(1)
+
+    db = client[database]
+
+    raw_name = mongo_cfg.get("raw_events_collection", "raw_events")
+    alert_name = mongo_cfg.get("alert_logs_collection", "alert_logs")
+    ttl_seconds = int(mongo_cfg.get("raw_event_ttl_seconds", 86400))
+
+    raw_coll = db[raw_name]
+    alert_coll = db[alert_name]
+
+    # TTL-controlled retention for optional raw event logging.
+    raw_coll.create_index([("ingested_at", ASCENDING)], expireAfterSeconds=ttl_seconds)
+
+    alert_coll.create_index([("district", ASCENDING)])
+    alert_coll.create_index([("timestamp", DESCENDING)])
+    alert_coll.create_index([("alert_id", ASCENDING)], unique=True)
+
+    print("MongoDB indexes are ready.")
 
 
 if __name__ == "__main__":
-    setup_mongodb(sys.argv[1] if len(sys.argv) > 1 else None)
+    main()

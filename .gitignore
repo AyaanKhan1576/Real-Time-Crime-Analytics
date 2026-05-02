@@ -21,6 +21,10 @@ htmlcov/
 
 # Notebook checkpoints
 .ipynb_checkpoints/
+logs
+outputs
+java-topology/target/
+
 
 # Build and packaging outputs
 build/
