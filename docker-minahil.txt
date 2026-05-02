@@ -1,5 +1,4 @@
-name: crime-analytics
-
+version: '3.8'
 services:
   zookeeper:
     image: confluentinc/cp-zookeeper:7.4.0
@@ -54,22 +53,15 @@ services:
       - "8080:8080"
 
   postgres:
-    image: postgres:16
-    container_name: postgres
+    image: postgres:14
     environment:
       POSTGRES_DB: crime_analytics
       POSTGRES_USER: crime_user
       POSTGRES_PASSWORD: crime_password
+    volumes:
+      - "D:/university/SEMESTER 8/big data/crime analytics/db:/docker-entrypoint-initdb.d:ro"
     ports:
       - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./db/postgres_init.sql:/docker-entrypoint-initdb.d/01_postgres_init.sql:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U crime_user -d crime_analytics"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
 
   mongo:
     image: mongo:6
@@ -93,7 +85,6 @@ services:
       MONGODB_PORT: 27017
       MONGODB_DB: crime_analytics
     command: python db/mongo_setup.py
-
 
   storm-harness:
     profiles:
@@ -148,62 +139,6 @@ services:
     environment:
       PYTHONUNBUFFERED: 1
 
-
-  spark-master:
-    build:
-      context: .
-      dockerfile: docker/Dockerfiles/spark/Dockerfile
-    image: crime-analytics-spark:latest
-    container_name: spark-master
-    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master", "--host", "spark-master", "--port", "7077", "--webui-port", "8080"]
-    environment:
-      PYTHONPATH: /app
-    ports:
-      - "7077:7077"
-      - "8081:8080"
-    volumes:
-      - .:/app
-    depends_on:
-      - postgres
-
-  spark-worker:
-    build:
-      context: .
-      dockerfile: docker/Dockerfiles/spark/Dockerfile
-    image: crime-analytics-spark:latest
-    container_name: spark-worker
-    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
-    environment:
-      SPARK_WORKER_MEMORY: 2g
-      SPARK_WORKER_CORES: 2
-      PYTHONPATH: /app
-    volumes:
-      - .:/app
-    depends_on:
-      - spark-master
-
-
-  streamlit:
-    build:
-      context: .
-      dockerfile: docker/Dockerfiles/app/Dockerfile
-    image: crime-analytics-app:latest
-    container_name: streamlit
-    command: ["streamlit", "run", "dashboard/streamlit_app.py", "--server.address=0.0.0.0", "--server.port=8501"]
-    environment:
-      PYTHONPATH: /app
-    ports:
-      - "8501:8501"
-    volumes:
-      - .:/app
-    depends_on:
-      - postgres
-      - mongodb
-
-
 volumes:
-  postgres_data:
   mongo_data:
   harness_logs:
-  storm_nimbus_data:
-  storm_supervisor_data:
