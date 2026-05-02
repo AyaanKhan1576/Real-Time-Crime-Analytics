@@ -4,4 +4,4 @@ storm.zookeeper.servers:
 nimbus.seeds:
   - "storm-nimbus"
 
-storm.local.dir: "/tmp/storm"
+storm.local.dir: "/var/lib/storm"

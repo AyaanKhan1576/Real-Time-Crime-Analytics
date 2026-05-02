@@ -3,6 +3,14 @@ app:
   environment: "local-docker"
   mode: "lambda-option-b"
 
+urls:
+  dashboard_base_url: "http://localhost:8501"
+  storm_ui_url: "http://localhost:8088"
+  spark_ui_url: "http://localhost:8081"
+  kafka_bootstrap_external: "localhost:9092"
+  postgres_external_url: "localhost:5432"
+  mongodb_external_url: "localhost:27017"
+
 data:
   base_path: "/app/data"
   crime_file: "crimes.csv"
@@ -10,14 +18,19 @@ data:
   violence_file: "violence.csv"
   sex_offenders_file: "sex_offenders.csv"
   police_stations_file: "police_stations.csv"
-  sample_mode: true
+  sample_mode: false
   crime_sample_rows: 50000
+  arrests_sample_rows: 10000
+  violence_sample_rows: 10000
+  sex_offenders_sample_rows: 10000
+  police_stations_sample_rows: 10000
   other_sample_rows: 10000
 
 kafka:
   bootstrap_servers: "kafka:9092"
   topic_crime_events: "crime-events"
   producer_rate_per_second: 1
+  producer_interval_seconds: 1
   producer_batch_size: 1
   producer_retry_count: 3
 
@@ -55,6 +68,8 @@ spark:
   master: "spark://spark-master:7077"
   shuffle_partitions: 8
   kmeans_k: 10
+  progress_interval_seconds: 30
+  log_dir: "/app/logs/spark"
   latest_completed_only: true
   run_id_format: "batch_YYYYMMDD_HHMMSS"
   write_mode: "staging_then_publish"

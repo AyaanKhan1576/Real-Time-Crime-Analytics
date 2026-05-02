@@ -1,0 +1,20 @@
+Obsolete merge reference.
+
+The runnable Docker Compose file is now:
+
+  docker-compose.yml
+
+The legacy compose draft that previously lived in this file used local Windows
+paths, older service names, and a different data folder. It has intentionally
+been replaced so nobody uses stale per-machine volumes.
+
+For machine-specific host paths, create a local .env file from .env.example:
+
+  cp .env.example .env
+
+Then edit:
+
+  CRIME_ANALYTICS_PROJECT_ROOT=.
+  CRIME_ANALYTICS_DATA_DIR=./data
+
+Inside containers, code should continue to use /app and /app/data.

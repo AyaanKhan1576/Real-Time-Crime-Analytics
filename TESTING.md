@@ -1,304 +1,293 @@
-# Testing Guide: Kafka + Storm Speed Layer (Person 2)
+# Testing Guide
 
-## Project Status for Person 2
+Run all commands from the repository root in WSL:
 
-### ✓ COMPLETED
-- **Kafka Producer** (`kafka/producer.py`): Reads CSV, publishes to `crime-events` topic with normalization
-- **Storm Bolts** (all 5): ParseBolt, DistrictBolt, WindowBolt, AnomalyBolt, AlertBolt
-  - Full schema validation, district normalization, sliding window, anomaly detection
-- **Database Setup**: Postgres schema (`db/postgres_init.sql`), Mongo indexes (`db/mongo_setup.py`)
-- **Config System**: `config/config.yaml.example` (tracked), `config/config.yaml` (ignored, local copy)
-- **In-Process Harness**: `storm/harness/run_topology_runner.py` (test-mode topology runner)
-- **Docker Compose**: Services for Kafka, Zookeeper, Postgres, Mongo, and now storm-harness
-- **Scripts**: Packaging, initialization, validation, smoke tests
-
-### ⚠ NEAR-COMPLETE (needs integration verification)
-- **Full Kafka → Storm → DB integration**: Code is ready; needs testing against real running services
-- **Streamlit Dashboard** (optional): Bonus feature, not yet implemented
-
-### ⊘ OUT OF SCOPE
-- **Person 1 Batch Layer** (Spark, HDFS): Person 1's responsibility
-- **DevOps/Production Deployment**: Use docker-compose locally; production setup TBD
-
----
-
-## How Testing Works
-
-### **1. Smoke Test (In-Process Harness)**
-**Purpose**: Verify bolts' logic without requiring full Storm or databases.
-
-**What gets tested**:
-- ParseBolt: JSON parsing, field validation, district normalization
-- DistrictBolt: Routing by district
-- WindowBolt: Sliding window counting
-- AnomalyBolt: Severity classification (LOW/MEDIUM/HIGH based on event counts)
-
-**Run**:
 ```bash
-python scripts/run_quick_smoke.py        # ~1% of dataset (~85k rows)
-python scripts/integration_smoke_test.py # ~25% of dataset (~2M rows)
+cd /home/ayaan/University/Big_Data_Analytics/Project/Real-time-crime-analytics
 ```
 
-**Success Criteria**:
-```
-Running quick smoke (1% of dataset)...
-CSV rows: 8542305, processing ~85423
-Processed 85423 rows.
-Quick smoke finished
-```
-✓ No crashes or unhandled exceptions
-✓ All rows processed  
-✓ (Optional) Check logs for anomalies printed
+The root `docker-compose.yml` is the source of truth. The file under `docker/` is only a compatibility wrapper.
 
----
+## 1. Compose Validation
 
-### **2. Full Integration: Docker Compose**
-**Purpose**: Test Kafka → Harness → Outputs in a containerized local environment.
-
-**Services**:
-- Zookeeper: Kafka coordinator
-- Kafka: Message broker (runs `crime-events` topic)
-- Postgres: Stores `realtime_district_counts` and `alerts`
-- Mongo: Stores `alert_logs`
-- storm-harness: In-process topology runner consuming Kafka
-
-**Setup**:
 ```bash
-# 1. Create local config
-cp config/config.yaml.example config/config.yaml
-# Edit config.yaml if needed (defaults should work with docker-compose):
-# - kafka.bootstrap_servers: "kafka:9092" (use docker service name, not localhost)
-# - postgres.host: "postgres"
-# - mongodb.host: "mongo"
-
-# 2. Start all services
-docker-compose -f docker/docker-compose.yml up -d
-
-# 3. Verify services are healthy
-docker-compose -f docker/docker-compose.yml ps
-# All should show "Up"
-
-# 4. Check logs (optional)
-docker-compose -f docker/docker-compose.yml logs kafka
-docker-compose -f docker/docker-compose.yml logs storm-harness
+docker compose -f docker-compose.yml --profile streaming --profile java-submit --profile harness config
+docker compose -f docker-compose.yml --profile streaming --profile java-submit --profile harness config --services
 ```
 
-**Success Criteria**:
+Expected core services:
+
+```text
+postgres
+mongodb
+zookeeper
+kafka
+storm-nimbus
+storm-supervisor
+storm-ui
+spark-master
+spark-worker
+streamlit
+```
+
+## 2. Fast Integrated Test
+
+This is the recommended local verification command. Spark uses the 15 percent config; Kafka streams the configured crime CSV as simulated realtime data.
+
 ```bash
-# Check storm-harness logs
-docker-compose -f docker/docker-compose.yml logs storm-harness
-
-# Expected output:
-# Full integration test: Kafka → harness → file outputs
-# ✓ Connected to Kafka
-# CSV rows: 8542305, processing ~2101447
-# ✓ Harness processing completed
-# ✓ Integration test complete. Outputs in logs/
-#   - anomalies.jsonl: N records
-#   - summary.json: 1 records
+make run-all-15pct
 ```
 
-✓ Docker services all start without errors  
-✓ storm-harness connects to Kafka  
-✓ Output files written to `logs/` volume (visible as `docker/logs/`)  
-✓ Anomalies detected and logged  
+Open:
 
-### **2b. Live Demo Monitor**
-**Purpose**: Show a moving picture of the stack during your presentation.
+```text
+Dashboard: http://localhost:8501
+Spark UI:  http://localhost:8081
+Storm UI:  http://localhost:8088
+```
 
-Run this in a separate terminal while Docker is up:
+## 3. Full Integrated Run
+
+Use this when you are ready to process the full Spark datasets.
+
 ```bash
-python scripts/demo_monitor.py
+make run-all
 ```
 
-What it shows:
-- current `docker-compose ps` state
-- latest `storm-harness` log lines
-- live Postgres row counts for `realtime_district_counts` and `alerts`
-- Mongo `alert_logs` document count
+## 4. Component Tests
 
-If you want the database rows to increase during the final Docker run, keep `PERSIST_TO_DBS=1` for `scripts/run_full_integration.py`.
+Spark-only fast test:
 
----
-
-### **3. Full Kafka → Storm → Postgres/Mongo (Real Storm Cluster)**
-**Purpose**: Test persistence layer writes.
-
-**Setup**:
 ```bash
-# Start services
-docker-compose -f docker/docker-compose.yml up -d
-
-# Wait for Postgres to be ready
-sleep 10
-
-# Initialize DB schemas
-docker exec $(docker ps -q -f ancestor=postgres:14) psql -U crime_user -d crime_analytics -f /docker-entrypoint-initdb.d/postgres_init.sql
-
-docker exec $(docker ps -q -f ancestor=mongo:6) bash -c "python3 - <<'PY'
-from pymongo import MongoClient
-client = MongoClient('localhost', 27017)
-db = client.get_database('crime_analytics')
-db.alert_logs.create_index('alert_id', unique=True)
-print('Mongo indexes ready')
-PY"
-
-# Start producer (send events to Kafka)
-python kafka/producer.py --config config/config.yaml --max-rows 2000
-
-# Deploy real Storm topology (requires streamparse or Storm CLI)
-# (For now, use the in-process harness or deploy via streamparse)
-
-# Query results
-psql "postgresql://crime_user:crime_password@localhost:5432/crime_analytics" -c \
-  "SELECT district, event_count, window_start, window_end FROM realtime_district_counts LIMIT 20;"
-
-psql "postgresql://crime_user:crime_password@localhost:5432/crime_analytics" -c \
-  "SELECT alert_id, district, severity, message FROM alerts LIMIT 20;"
-
-# Mongo
-mongosh "mongodb://localhost:27017/crime_analytics" --eval \
-  "db.alert_logs.find().sort({timestamp:-1}).limit(10).forEach(printjson)"
+make spark-up
+make spark-run-15pct
+make run-dashboard
 ```
 
-**Success Criteria**:
-✓ Postgres tables populated with rows  
-✓ Anomalies detected (severity = LOW/MEDIUM/HIGH)  
-✓ Mongo documents written for detected anomalies  
+Spark-only full run:
 
----
-
-## Testing Checklist
-
-### Pre-Test
-- [ ] Clone repo and checkout `minahil` branch
-- [ ] Copy `config/config.yaml.example` → `config/config.yaml`
-- [ ] Verify Python packages: `pip install pyyaml kafka-python psycopg2-binary pymongo`
-- [ ] Verify Docker is running and docker-compose is available
-
-### Smoke Test (Quick ~5 min)
 ```bash
-python scripts/run_quick_smoke.py
+make spark-up
+make spark-run
+make run-dashboard
 ```
-- [ ] Completes without exceptions
-- [ ] Prints "Processed ~85k rows"
 
-### Docker Integration (15-30 min)
+Streaming-only run:
+
 ```bash
-docker-compose -f docker/docker-compose.yml up -d
-# Wait 30 seconds for services to start
-docker-compose -f docker/docker-compose.yml logs storm-harness
-# Within 1-2 minutes:
+make up-detached
+make setup-mongo
+make run-storm
+make run-producer
+make run-dashboard
 ```
-- [ ] storm-harness logs show "Connected to Kafka"
-- [ ] "Harness processing completed"
-- [ ] "Outputs in logs/" with anomalies.jsonl and summary.json
 
-### Producer → Kafka Test (30 min)
+Equivalent direct scripts:
+
 ```bash
-python kafka/producer.py --config config/config.yaml --max-rows 200 --kafka-broker kafka:9092 &
-# (In another terminal) Monitor Kafka topic:
-docker-compose -f docker/docker-compose.yml exec kafka kafka-console-consumer --bootstrap-server kafka:9092 --topic crime-events --from-beginning --max-messages 10
+./scripts/run_spark_batch.sh /app/config/config.spark_15pct.yaml
+./scripts/run_spark_batch.sh /app/config/config.yaml
+./scripts/run_storm_topology.sh
+./scripts/run_kafka_producer.sh
+./scripts/run_dashboard.sh
 ```
-- [ ] Messages appear in Kafka topic
-- [ ] Each message is valid JSON with required fields
 
-### Postgres Verification
+## 5. Logs
+
 ```bash
-docker-compose -f docker/docker-compose.yml exec -T postgres psql -U crime_user -d crime_analytics -c "\\dt"
-docker-compose -f docker/docker-compose.yml exec -T postgres psql -U crime_user -d crime_analytics -c "SELECT COUNT(*) FROM realtime_district_counts;"
-docker-compose -f docker/docker-compose.yml exec -T postgres psql -U crime_user -d crime_analytics -c "SELECT * FROM alerts LIMIT 5;"
+make logs-spark
+make logs-producer
+make logs-storm
+make logs-dashboard
 ```
-- [ ] realtime_district_counts table has rows
-- [ ] alerts table has rows with severity values
 
-Note: `\\dt` is a psql meta-command, so it must be run by itself or with separate `-c` flags. Do not put SQL statements on the same line after `\\dt`.
+Spark also writes run logs to:
 
-### Mongo Verification
+```text
+logs/spark/
+```
+
+## 6. Spark Verification
+
+Latest batch status:
+
 ```bash
-docker-compose -f docker/docker-compose.yml exec -T mongo mongosh --eval "db.getSiblingDB('crime_analytics').alert_logs.countDocuments()"
-docker-compose -f docker/docker-compose.yml exec -T mongo mongosh --eval "db.getSiblingDB('crime_analytics').alert_logs.findOne()"
-```
-- [ ] alert_logs collection has documents
-- [ ] Documents have expected schema (alert_id, severity, timestamp, etc.)
-
----
-
-## Expected Results
-
-### Smoke Test
-```json
-{
-  "timestamp": 1714580000.0,
-  "total_rows_processed": 85423,
-  "anomalies_detected": 42,
-  "sample_fraction": 0.01
-}
+docker exec postgres psql -U crime_user -d crime_analytics -c "
+SELECT run_id, job_name, status, started_at, finished_at, message
+FROM batch_job_status
+ORDER BY created_at DESC
+LIMIT 5;
+"
 ```
 
-### Full Integration (25% sample ≈ 2.1M rows)
-- **Anomalies detected**: 150-300 (varies by data and thresholds)
-- **Districts represented**: 20-30 unique districts
-- **Severity breakdown**:
-  - LOW: 40-50%
-  - MEDIUM: 30-40%
-  - HIGH: 10-20%
+Latest completed run counts:
 
-### Threshold Config (from `config/config.yaml`)
-```yaml
-storm:
-  window_size_seconds: 300          # 5-min sliding window
-  slide_interval_seconds: 60        # emit every 60 seconds
-  anomaly_threshold: 25             # baseline threshold
-  severity:
-    low_min: 25                     # event_count >= 25 → LOW
-    medium_min: 40                  # event_count >= 40 → MEDIUM
-    high_min: 60                    # event_count >= 60 → HIGH
-```
-
----
-
-## Troubleshooting
-
-### Error: "No module named 'yaml'"
 ```bash
-pip install pyyaml
+docker exec postgres psql -U crime_user -d crime_analytics -c "
+WITH latest AS (
+  SELECT run_id
+  FROM batch_job_status
+  WHERE status = 'completed'
+  ORDER BY finished_at DESC
+  LIMIT 1
+)
+SELECT 'crime_trends' AS table_name, COUNT(*) FROM crime_trends WHERE run_id = (SELECT run_id FROM latest)
+UNION ALL SELECT 'arrest_rates', COUNT(*) FROM arrest_rates WHERE run_id = (SELECT run_id FROM latest)
+UNION ALL SELECT 'violence_stats', COUNT(*) FROM violence_stats WHERE run_id = (SELECT run_id FROM latest)
+UNION ALL SELECT 'sex_offender_density', COUNT(*) FROM sex_offender_density WHERE run_id = (SELECT run_id FROM latest)
+UNION ALL SELECT 'hotspots', COUNT(*) FROM hotspots WHERE run_id = (SELECT run_id FROM latest)
+UNION ALL SELECT 'correlations', COUNT(*) FROM correlations WHERE run_id = (SELECT run_id FROM latest);
+"
 ```
 
-### Error: "Connection refused" (Kafka)
-- Check: `docker-compose ps` (is Kafka service running?)
-- Wait: Kafka takes 20-30 seconds to start
-- Config: Ensure `bootstrap_servers: kafka:9092` in docker context (not localhost)
+Expected result: all six batch analytics tables should have rows for the latest completed `run_id`.
 
-### Error: "Postgres connection failed"
+## 7. Streaming Verification
+
+Storm topology:
+
 ```bash
-docker-compose -f docker/docker-compose.yml logs postgres
-# If it didn't run the init script:
-docker exec $(docker ps -q -f ancestor=postgres:14) psql -U crime_user -d crime_analytics -f /docker-entrypoint-initdb.d/postgres_init.sql
+docker exec storm-nimbus storm list
 ```
 
-### Empty Alerts Table
-- Check thresholds in config.yaml (if window event counts never exceed 25, no LOW alerts)
-- Run producer with more rows: `--max-rows 5000`
-- Verify window_size_seconds (300 = 5 min; adjust if dataset is small)
+Kafka producer logs:
 
----
+```bash
+docker logs --tail 40 kafka-producer
+```
 
-## Next Steps
+Kafka topic check:
 
-1. **Run smoke test** to verify bolts logic ✓ (quick)
-2. **Run docker-compose** to verify full pipeline ✓ (15-30 min)
-3. **Deploy real Storm topology** when ready:
-   - Use streamparse: `streamparse deploy` (requires streamparse installed)
-   - Or use Storm CLI with packaged JAR (Person 1 may handle this)
-4. **Monitor dashboard** (optional, Streamlit integration pending)
+```bash
+docker exec kafka kafka-topics --bootstrap-server kafka:9092 --list
+docker exec kafka kafka-console-consumer --bootstrap-server kafka:9092 --topic crime-events --from-beginning --max-messages 5
+```
 
----
+Realtime district counts:
 
-## References
+```bash
+docker exec postgres psql -U crime_user -d crime_analytics -c "
+SELECT district, window_start, window_end, event_count, updated_at
+FROM realtime_district_counts
+ORDER BY updated_at DESC
+LIMIT 10;
+"
+```
 
-- **Config**: [config/config.yaml.example](../config/config.yaml.example)
-- **Producer**: [kafka/producer.py](../kafka/producer.py)
-- **Bolts**: [storm/bolts/](../storm/bolts/)
-- **Harness**: [storm/harness/run_topology_runner.py](../storm/harness/run_topology_runner.py)
-- **Docker**: [docker/docker-compose.yml](../docker/docker-compose.yml)
+Alerts:
+
+```bash
+docker exec postgres psql -U crime_user -d crime_analytics -c "
+SELECT alert_id, district, alert_timestamp, event_count, threshold_value, severity
+FROM alerts
+ORDER BY alert_timestamp DESC
+LIMIT 10;
+"
+```
+
+MongoDB alert logs:
+
+```bash
+docker exec mongodb mongosh crime_analytics --quiet --eval "db.alert_logs.find().sort({timestamp:-1}).limit(5).toArray()"
+```
+
+Expected result: realtime district counts should update after Storm receives events. Alerts appear only when the configured threshold is crossed.
+
+## 8. Dashboard Verification
+
+```bash
+curl -I http://localhost:8501
+```
+
+Expected:
+
+```text
+HTTP/1.1 200 OK
+```
+
+The dashboard should show:
+
+```text
+Batch job status
+Crime Trends
+Arrest Rates
+Violence Analysis
+Sex Offender Density
+Hotspot Map
+Correlations
+Realtime District Counts
+Realtime Alerts
+```
+
+If Kafka or Storm are not running, realtime sections may be empty. If Spark has not completed, historical sections should show a loading or empty-state message instead of crashing.
+
+## 9. Database Utilities
+
+PostgreSQL health:
+
+```bash
+docker exec postgres pg_isready -U crime_user -d crime_analytics
+```
+
+List PostgreSQL tables:
+
+```bash
+docker exec postgres psql -U crime_user -d crime_analytics -Atc "SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name;"
+```
+
+Apply PostgreSQL schema manually:
+
+```bash
+docker exec -i postgres psql -U crime_user -d crime_analytics < db/postgres_init.sql
+```
+
+Recreate MongoDB indexes:
+
+```bash
+make setup-mongo
+```
+
+## 10. Configuration Checks
+
+Full Spark config:
+
+```text
+config/config.yaml
+```
+
+Fast Spark test config:
+
+```text
+config/config.spark_15pct.yaml
+```
+
+Local host paths:
+
+```bash
+cp .env.example .env
+```
+
+Then edit if needed:
+
+```dotenv
+CRIME_ANALYTICS_PROJECT_ROOT=.
+CRIME_ANALYTICS_DATA_DIR=./data
+```
+
+Use WSL/Linux paths for absolute values. Do not use Windows `C:\...` paths in Compose volumes.
+
+## 11. Cleanup
+
+Stop containers and keep database volumes:
+
+```bash
+make down
+```
+
+Delete containers and database volumes:
+
+```bash
+docker compose down -v
+```
+
+`-v` deletes PostgreSQL and MongoDB stored results.

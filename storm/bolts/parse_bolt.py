@@ -18,6 +18,15 @@ def _load_cfg(config_path):
     return load_config(config_path)
 
 
+def normalize_district(value):
+    district = str(value or "").strip()
+    if not district:
+        return "UNKNOWN"
+    if district.endswith(".0"):
+        district = district[:-2]
+    return district.zfill(3) if district.isdigit() else district
+
+
 class ParseBolt(Bolt):
     def initialize(self, conf, ctx):
         cfg = _load_cfg(conf.get("config_path", "config/config.yaml"))
@@ -48,8 +57,8 @@ class ParseBolt(Bolt):
                 if f not in data or data[f] is None:
                     raise ValueError(f"missing {f}")
 
-            # Ensure district is string
-            data["district"] = str(data.get("district") or "UNKNOWN").strip() or "UNKNOWN"
+            # Ensure district is a normalized string shared with Spark/dashboard.
+            data["district"] = normalize_district(data.get("district"))
             data["arrest"] = bool(data.get("arrest"))
             data["latitude"] = float(data.get("latitude"))
             data["longitude"] = float(data.get("longitude"))

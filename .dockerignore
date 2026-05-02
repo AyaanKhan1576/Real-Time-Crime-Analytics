@@ -4,7 +4,6 @@ __pycache__
 *.pyc
 logs
 outputs
-data/raw
 *.log.git
 .gitignore
 .idea

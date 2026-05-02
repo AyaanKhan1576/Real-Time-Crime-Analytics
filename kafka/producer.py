@@ -12,6 +12,11 @@ from kafka import KafkaProducer
 from config.config_loader import load_config
 
 
+FALLBACK_FILE_NAMES = {
+    "crime_file": "Crimes_-_2001_to_Present_20260501.csv",
+}
+
+
 def json_serializer(obj):
     return json.dumps(obj).encode("utf-8")
 
@@ -49,6 +54,38 @@ def normalize_header(name):
     return normalized.strip("_")
 
 
+def normalize_district(value):
+    district = "" if value is None else str(value).strip()
+    if not district:
+        return "UNKNOWN"
+    if district.endswith(".0"):
+        district = district[:-2]
+    return district.zfill(3) if district.isdigit() else district
+
+
+def resolve_data_file(data_cfg, file_key):
+    base_path = data_cfg.get("base_path", "data")
+    configured_name = data_cfg.get(file_key)
+    candidates = []
+    if configured_name:
+        candidates.append(os.path.join(base_path, configured_name))
+        candidates.append(os.path.join(os.path.dirname(__file__), "..", "data", configured_name))
+        candidates.append(os.path.join(os.path.dirname(__file__), "..", "data", "raw", configured_name))
+
+    fallback_name = FALLBACK_FILE_NAMES.get(file_key)
+    if fallback_name:
+        candidates.append(os.path.join(base_path, fallback_name))
+        candidates.append(os.path.join(os.path.dirname(__file__), "..", "data", fallback_name))
+        candidates.append(os.path.join(os.path.dirname(__file__), "..", "data", "raw", fallback_name))
+
+    for candidate in candidates:
+        normalized = os.path.normpath(candidate)
+        if os.path.exists(normalized):
+            return normalized
+
+    return os.path.normpath(candidates[0]) if candidates else os.path.join(base_path, "")
+
+
 def run_producer(config_path="config/config.yaml", max_rows=None):
     cfg = load_config(config_path)
     kafka_cfg = cfg.get("kafka", {})
@@ -57,6 +94,8 @@ def run_producer(config_path="config/config.yaml", max_rows=None):
     bootstrap = kafka_cfg.get("bootstrap_servers", "localhost:9092")
     topic = kafka_cfg.get("topic_crime_events", "crime-events")
     rate = float(kafka_cfg.get("producer_rate_per_second", 1))
+    interval = kafka_cfg.get("producer_interval_seconds")
+    interval = None if interval is None else float(interval)
 
     producer = KafkaProducer(
         bootstrap_servers=bootstrap,
@@ -64,21 +103,22 @@ def run_producer(config_path="config/config.yaml", max_rows=None):
         retries=int(kafka_cfg.get("producer_retry_count", 3)),
     )
 
-    data_file = os.path.join(data_cfg.get("base_path", "data"), data_cfg.get("crime_file"))
-    # If running locally in repo, fallback to dataset filename under ./data/raw.
-    if not os.path.exists(data_file):
-        data_file = os.path.join(os.path.dirname(__file__), "..", "data", "raw", data_cfg.get("crime_file"))
-        data_file = os.path.normpath(data_file)
-
+    data_file = resolve_data_file(data_cfg, "crime_file")
     if not os.path.exists(data_file):
         raise FileNotFoundError(f"Crime dataset not found: {data_file}")
 
-    if rate <= 0:
-        rate = 0
+    if interval is not None and interval > 0:
+        sleep_seconds = interval
+        rate_label = f"1 event every {interval:g}s"
+    elif rate <= 0:
+        sleep_seconds = 0
+        rate_label = "unlimited"
     else:
         rate = max(rate, 0.1)
+        sleep_seconds = 1.0 / rate
+        rate_label = f"{rate:g} events/s"
     sent = 0
-    logging.info("Producer starting. topic=%s broker=%s rate=%s file=%s", topic, bootstrap, rate, data_file)
+    logging.info("Producer starting. topic=%s broker=%s rate=%s file=%s", topic, bootstrap, rate_label, data_file)
 
     with open(data_file, newline='', encoding='utf-8') as csvfile:
         reader = csv.DictReader(csvfile)
@@ -102,15 +142,15 @@ def run_producer(config_path="config/config.yaml", max_rows=None):
                 "date": str(date_value).strip(),
                 "block": str(block_value).strip(),
                 "primary_type": str(primary_type).strip(),
-                "district": str(district).strip() if district is not None and str(district).strip() else "UNKNOWN",
+                "district": normalize_district(district),
                 "arrest": as_bool(arrest_value),
                 "latitude": as_float(latitude),
                 "longitude": as_float(longitude),
             }
 
             producer.send(topic, msg)
-            if rate > 0:
-                time.sleep(1.0 / rate)
+            if sleep_seconds > 0:
+                time.sleep(sleep_seconds)
             sent += 1
 
             if max_rows and sent >= max_rows:

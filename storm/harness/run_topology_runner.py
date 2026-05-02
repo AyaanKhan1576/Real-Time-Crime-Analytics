@@ -22,6 +22,39 @@ from storm.bolts.district_bolt import DistrictBolt
 from storm.bolts.window_bolt import WindowBolt
 from storm.bolts.anomaly_bolt import AnomalyBolt
 from storm.bolts.alert_bolt import AlertBolt
+from config.config_loader import load_config
+
+
+FALLBACK_CRIME_FILE = "Crimes_-_2001_to_Present_20260501.csv"
+
+
+def resolve_crime_csv(config_path):
+    cfg = load_config(config_path)
+    data_cfg = cfg.get("data", {})
+    base_path = Path(data_cfg.get("base_path", "data"))
+    configured_file = data_cfg.get("crime_file", "crimes.csv")
+    root = Path(PROJECT_ROOT)
+    candidates = [
+        base_path / configured_file,
+        root / "data" / configured_file,
+        root / "data" / "raw" / configured_file,
+        base_path / FALLBACK_CRIME_FILE,
+        root / "data" / FALLBACK_CRIME_FILE,
+        root / "data" / "raw" / FALLBACK_CRIME_FILE,
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
+
+
+def normalize_district(value):
+    district = str(value or "").strip()
+    if not district:
+        return "UNKNOWN"
+    if district.endswith(".0"):
+        district = district[:-2]
+    return district.zfill(3) if district.isdigit() else district
 
 
 class SimpleTuple:
@@ -112,7 +145,7 @@ def run_from_csv(csv_path, sample_fraction=0.25, config_path='config/config.yaml
                 'date': row.get('Date') or row.get('date'),
                 'block': row.get('Block') or row.get('block'),
                 'primary_type': row.get('Primary Type') or row.get('primary_type'),
-                'district': row.get('District') or row.get('district'),
+                'district': normalize_district(row.get('District') or row.get('district')),
                 'arrest': row.get('Arrest') in ['true', 'True', '1', 't', 'yes', 'Y', 'y'],
                 'latitude': row.get('Latitude') or row.get('latitude') or 0.0,
                 'longitude': row.get('Longitude') or row.get('longitude') or 0.0,
@@ -138,7 +171,7 @@ def run_from_csv(csv_path, sample_fraction=0.25, config_path='config/config.yaml
                 d.process(td)
 
                 # DistrictBolt emits [district, data]
-                district = str(parsed.get('district') or 'UNKNOWN')
+                district = normalize_district(parsed.get('district'))
                 wd = SimpleTuple([district, parsed])
                 w.process(wd)
 
@@ -206,10 +239,9 @@ def run_from_csv(csv_path, sample_fraction=0.25, config_path='config/config.yaml
 
 
 if __name__ == '__main__':
-    # default dataset path
-    ROOT = Path(PROJECT_ROOT)
-    csv_path = ROOT / 'data' / 'raw' / 'Crimes_-_2001_to_Present_20260501.csv'
+    config_path = os.getenv("CONFIG_PATH", "config/config.yaml")
+    csv_path = resolve_crime_csv(config_path)
     if not csv_path.exists():
         print('CSV not found:', csv_path)
         sys.exit(1)
-    run_from_csv(str(csv_path), sample_fraction=0.25, config_path='config/config.yaml')
+    run_from_csv(str(csv_path), sample_fraction=0.25, config_path=config_path)

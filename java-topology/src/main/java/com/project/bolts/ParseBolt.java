@@ -74,7 +74,16 @@ public class ParseBolt extends BaseRichBolt {
 
     private String normalizeDistrict(Object value) {
         String district = value == null ? "UNKNOWN" : String.valueOf(value).trim();
-        return district.isEmpty() ? "UNKNOWN" : district;
+        if (district.isEmpty()) {
+            return "UNKNOWN";
+        }
+        if (district.endsWith(".0")) {
+            district = district.substring(0, district.length() - 2);
+        }
+        if (district.matches("^[0-9]+$")) {
+            return String.format("%03d", Integer.parseInt(district));
+        }
+        return district;
     }
 
     private boolean parseBoolean(Object value) {

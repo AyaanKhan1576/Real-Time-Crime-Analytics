@@ -20,12 +20,17 @@ data:
   police_stations_file: "police_stations.csv"
   sample_mode: false
   crime_sample_rows: 50000
+  arrests_sample_rows: 10000
+  violence_sample_rows: 10000
+  sex_offenders_sample_rows: 10000
+  police_stations_sample_rows: 10000
   other_sample_rows: 10000
 
 kafka:
   bootstrap_servers: "kafka:9092"
   topic_crime_events: "crime-events"
   producer_rate_per_second: 1
+  producer_interval_seconds: 1
   producer_batch_size: 1
   producer_retry_count: 3
 

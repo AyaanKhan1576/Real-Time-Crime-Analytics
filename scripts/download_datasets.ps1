@@ -1,5 +1,5 @@
 param(
-    [string]$OutputDir = "data/raw",
+    [string]$OutputDir = "data",
     [int]$MaxRows = 0,
     [switch]$UseApi,
     [string]$AppToken = $env:SOCRATA_APP_TOKEN,
@@ -10,10 +10,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $datasets = @(
-    @{ Name = "crimes"; Id = "ijzp-q8t2"; File = "crimes_2001_to_present.csv" },
+    @{ Name = "crimes"; Id = "ijzp-q8t2"; File = "crimes.csv" },
     @{ Name = "police_stations"; Id = "z8bn-74gv"; File = "police_stations.csv" },
     @{ Name = "arrests"; Id = "dpt3-jri9"; File = "arrests.csv" },
-    @{ Name = "violence_reduction"; Id = "gumc-mgzr"; File = "violence_reduction_victims.csv" },
+    @{ Name = "violence_reduction"; Id = "gumc-mgzr"; File = "violence.csv" },
     @{ Name = "sex_offenders"; Id = "vc9r-bqvy"; File = "sex_offenders.csv" }
 )
 

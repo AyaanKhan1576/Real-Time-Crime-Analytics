@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-docker compose -f docker/docker-compose.yml --profile java-submit up -d storm-submit-java
+cd "$(dirname "$0")/.."
+
+docker compose -f docker-compose.yml --profile java-submit up --build storm-submit-java
