@@ -1,0 +1,45 @@
+# Project Prompt History
+
+- Study `AGENT.md` and the project brief for the Real-Time Crime Analytics and Intelligent Alert System; ask clarifying questions before acting.
+- Use WSL on Windows and target the repo at `/home/ayaan/University/Big_Data_Analytics/Project/Real-time-crime-analytics`.
+- Build the project from scratch if only datasets and instructions exist.
+- Create the full repository scaffold for Docker, Spark, Kafka, Storm, PostgreSQL, MongoDB, Streamlit, scripts, README, and report support.
+- Use Lambda Architecture Option B, with Spark batch and Kafka + Storm streaming running simultaneously.
+- Keep all shared settings in `config/config.yaml`; do not hardcode table names, paths, topic names, or field names.
+- Treat `district` as a string everywhere and use standardized snake_case field names.
+- Implement PostgreSQL schema with batch tables, temp/staging tables, realtime alerts, realtime district counts, and batch job status.
+- Implement Spark crime trends first as the initial working batch milestone.
+- Verify and run only the Spark batch layer and dashboard, without Kafka or Storm.
+- During Spark testing, use only a small sample or 15 percent of the data to avoid long local runs.
+- Complete the full Spark batch layer end-to-end.
+- Implement crime trends grouped by year, month, day of week, and hour.
+- Implement arrest rate analysis by primary type, district, and race using crimes joined to arrests on case number.
+- Implement violence and gunshot analysis, including homicides, non-fatal shootings, gunshot proportion, and top community areas.
+- Implement sex offender density analysis and handle missing district information appropriately.
+- Implement K-Means hotspot detection using PySpark MLlib.
+- Implement cross-dataset correlations, including violence vs arrest rate and sex offender density vs crime rate.
+- Ensure all Spark outputs use `run_id`, explicit schemas, temp tables first, and final publish only after successful completion.
+- Update `run_batch.py` to execute all six analytics in order with shared failure handling.
+- Update the dashboard to display all Spark batch analytics, not just crime trends.
+- Create `instructions.md` with setup, run, test, verification, database, cleanup, and Git workflow commands.
+- Make project commands consistent by supporting both Makefile targets and direct scripts.
+- Make 15 percent Spark testing configurable through a config file instead of command-line environment overrides.
+- Add periodic Spark logging so long runs show progress without slowing processing.
+- Make the full Spark run the default `make spark-run`; keep 15 percent testing as a separate configured target.
+- Run and verify the Spark-only full project path with dashboard.
+- Confirm all Spark datasets are used, all analytics are calculated, all outputs are displayed, and documentation is current.
+- Improve sex offender density handling so `UNKNOWN` or unmatched districts do not dominate dashboard rankings.
+- Hide or handle unavailable district names better on the dashboard.
+- Investigate why violence analysis appeared to show only recent years despite the dataset containing records from 1991 onward.
+- Ensure all violence records are used and historical coverage is displayed correctly.
+- Reconfirm required batch analytics from sections 7.1 through 7.6 of the brief are implemented and displayed.
+- After merging Spark and Kafka/Storm branches, resolve remaining integration issues.
+- Make paths, volumes, and environment variables configurable instead of local-machine-specific.
+- Ensure the whole project can run from a single Make command.
+- Verify integrated Spark, Kafka, Storm, PostgreSQL, MongoDB, and dashboard behavior using the 15 percent Spark config.
+- Keep Kafka/Storm realtime processing acting on all data as simulated live events.
+- Document realtime producer rate and how to configure it.
+- Update README with explicit teammate setup instructions, path configuration, volume configuration, environment variables, and run commands.
+- Restructure README to be clearer and more concise.
+- Create or update `REPORT.md` with testing commands and architecture details.
+- Replace stale testing documentation with current integrated commands.

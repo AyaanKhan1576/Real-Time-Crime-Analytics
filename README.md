@@ -1,29 +1,124 @@
 # Real-Time Crime Analytics and Intelligent Alert System
 
-Big Data Engineering project using Chicago public safety datasets with Lambda Architecture.
+**Contributors:** 
+- Ayaan Khan
+- Minahil Ali
 
-## What Runs
+A Big Data Engineering project that analyzes Chicago public safety datasets using a Lambda Architecture. The system combines historical batch analytics with simulated real-time crime event streaming, anomaly detection, persistent storage, and a Streamlit dashboard.
 
-The project uses Option B: Spark batch processing and Kafka + Storm streaming run at the same time.
+## Overview
+
+The project answers two different public safety analytics questions at the same time:
+
+- **Historical analytics:** What has happened over time?
+- **Real-time alerts:** What is happening right now?
 
 ```text
-Historical CSVs -> PySpark -> PostgreSQL batch tables -> Streamlit historical views
-Crime CSV replay -> Kafka -> Storm -> PostgreSQL realtime tables + MongoDB alert_logs -> Streamlit live views
+Historical CSV datasets
+  -> Apache Spark / PySpark
+  -> PostgreSQL analytical tables
+  -> Streamlit historical dashboard views
 ```
 
-Spark owns historical analytics. Kafka + Storm own realtime alerts and district counts. The dashboard reads both without duplicating analytics.
+```text
+Crime CSV replay
+  -> Kafka producer
+  -> Kafka topic: crime-events
+  -> Apache Storm topology
+  -> PostgreSQL realtime tables + MongoDB alert logs
+  -> Streamlit live dashboard views
+```
 
-For sex offender density, the source dataset does not provide a police district field. Spark derives district where possible from matched crime blocks, keeps unmatched records separate, and does not rank unmatched records as a real district.
+Spark owns the batch layer. Kafka and Storm own the speed layer. The dashboard only reads from PostgreSQL and MongoDB, so it can show live alerts even while Spark batch jobs are still running.
+
+## Key Features
+
+- Dockerized local big-data stack using Docker Compose.
+- Spark batch processing with explicit `StructType` schemas.
+- Kafka producer that replays crime records as JSON events.
+- Apache Storm topology for sliding-window anomaly detection.
+- PostgreSQL serving layer for structured analytics and alerts.
+- MongoDB serving layer for alert log documents.
+- Streamlit dashboard for historical analytics and real-time monitoring.
+- Config-driven paths, sample sizes, thresholds, and service settings.
+- Staging-to-final publish pattern for Spark outputs to avoid partial results.
+
+## Tech Stack
+
+| Layer | Technology |
+| --- | --- |
+| Batch processing | Apache Spark, PySpark |
+| Streaming ingestion | Apache Kafka |
+| Stream processing | Apache Storm |
+| Structured storage | PostgreSQL |
+| Document storage | MongoDB |
+| Dashboard | Streamlit |
+| Orchestration | Docker Compose, Makefile |
+
+## Batch Analytics Implemented
+
+Spark computes and writes the following analytics to PostgreSQL:
+
+- Crime trends by year, month, day of week, and hour.
+- Arrest rates by crime type, district, and race.
+- Violence and gunshot statistics by month, district, and community area.
+- Sex offender density by derived district where possible.
+- Geospatial hotspots using K-Means clustering.
+- Cross-dataset correlations such as violence rate vs arrest rate.
+
+All Spark outputs include a deterministic `run_id`, write to `_temp` staging tables first, and publish to final tables only after the batch run completes successfully.
+
+## Streaming Analytics Implemented
+
+Kafka streams rows from the crime dataset into the `crime-events` topic. Storm consumes those events through this topology:
+
+```text
+KafkaSpout -> ParseBolt -> DistrictBolt -> WindowBolt -> AnomalyBolt -> AlertBolt
+```
+
+The topology counts events per district inside a sliding window and generates alerts when counts exceed configurable thresholds.
+
+Default severity rules:
+
+```text
+25 to 39 events = LOW
+40 to 59 events = MEDIUM
+60+ events     = HIGH
+```
+
+## Repository Structure
+
+```text
+.
+├── config/              # Runtime configuration
+├── dashboard/           # Streamlit dashboard
+├── data/                # Local CSV datasets
+├── db/                  # PostgreSQL schema and MongoDB setup
+├── docker/              # Docker compatibility wrapper
+├── kafka/               # Kafka producer
+├── scripts/             # Run scripts
+├── spark/               # PySpark schemas, preprocessing, analytics, ML
+├── storm/               # Storm topology, spouts, and bolts
+├── docker-compose.yml   # Main Docker Compose file
+├── Makefile             # Main run commands
+├── README.md
+├── REPORT.md
+└── TESTING.md
+```
 
 ## Prerequisites
 
+Recommended environment:
+
 - Windows with WSL2 Ubuntu.
 - Docker Desktop installed on Windows.
-- Docker Desktop WSL integration enabled for Ubuntu.
+- Docker Desktop WSL integration enabled.
 - Git.
-- No manual Windows install is needed for Spark, Kafka, Storm, PostgreSQL, or MongoDB.
+- Make.
 
-Verify from WSL:
+No manual Windows installation is required for Spark, Kafka, Storm, PostgreSQL, or MongoDB. Those services run in Docker containers.
+
+Verify Docker from WSL:
 
 ```bash
 docker --version
@@ -31,19 +126,35 @@ docker compose version
 docker ps
 ```
 
-## Teammate Setup
+## Dataset Setup
 
-Run all commands from the repo root in WSL:
+Place the five Chicago public safety CSV files in `data/`:
 
-```bash
-cd /home/ayaan/University/Big_Data_Analytics/Project/Real-time-crime-analytics
+```text
+data/crimes.csv
+data/arrests.csv
+data/violence.csv
+data/sex_offenders.csv
+data/police_stations.csv
 ```
 
-For a teammate, replace that path with their own WSL repo path.
+The loader also supports the downloaded City of Chicago filenames, for example:
 
-The root [docker-compose.yml](./docker-compose.yml) is the source of truth. [docker/docker-compose.yml](./docker/docker-compose.yml) only includes the root file for backward compatibility.
+```text
+Crimes_-_2001_to_Present_20260501.csv
+Arrests_20260501.csv
+Violence_Reduction_-_Victims_of_Homicides_and_Non-Fatal_Shootings_20260501.csv
+Sex_Offenders_20260501.csv
+Police_Stations_20260501.csv
+```
 
-Host paths are configured through a local `.env` file. Create it only if the repo or dataset directory differs from the defaults:
+Large datasets are not committed to the repository. Download them from the City of Chicago Open Data Portal and place them in the local `data/` directory.
+
+## Local Path Configuration
+
+The root `docker-compose.yml` is the main Compose file. The file at `docker/docker-compose.yml` only includes the root file for backwards compatibility.
+
+If your repo or data directory differs from the defaults, create a local `.env` file:
 
 ```bash
 cp .env.example .env
@@ -56,35 +167,13 @@ CRIME_ANALYTICS_PROJECT_ROOT=.
 CRIME_ANALYTICS_DATA_DIR=./data
 ```
 
-Rules for paths:
+Path rules:
 
 - Use WSL/Linux paths, not Windows `C:\...` paths.
 - Do not hardcode personal paths in `docker-compose.yml`, `Makefile`, or scripts.
 - Inside containers, the project is mounted at `/app`.
 - Inside containers, datasets are mounted at `/app/data`.
 - Keep `config/config.yaml` using `data.base_path: "/app/data"`.
-
-## Datasets
-
-Place the five CSVs in `data/`:
-
-```text
-data/crimes.csv
-data/arrests.csv
-data/violence.csv
-data/sex_offenders.csv
-data/police_stations.csv
-```
-
-The loader also falls back to the downloaded City of Chicago filenames, such as:
-
-```text
-Crimes_-_2001_to_Present_20260501.csv
-Arrests_20260501.csv
-Violence_Reduction_-_Victims_of_Homicides_and_Non-Fatal_Shootings_20260501.csv
-Sex_Offenders_20260501.csv
-Police_Stations_20260501.csv
-```
 
 ## Configuration
 
@@ -100,9 +189,7 @@ Fast Spark test config:
 config/config.spark_15pct.yaml
 ```
 
-`config/config.yaml` is the default and uses the full dataset for Spark. `config/config.spark_15pct.yaml` limits large Spark inputs to about 15 percent for local testing. Kafka still streams the full configured crime CSV unless you pass an explicit producer row limit.
-
-Important values:
+Important settings:
 
 ```yaml
 data:
@@ -118,23 +205,38 @@ storm:
   anomaly_threshold: 25
 ```
 
-To replay slower, edit `producer_interval_seconds` to `15` or `30`.
+`config/config.yaml` is the default full run. `config/config.spark_15pct.yaml` limits large Spark inputs to about 15 percent for faster local testing. Kafka still streams the configured crime dataset as simulated live data.
 
-## Run Everything
+To slow down simulated real-time replay, edit:
 
-Fast integrated test:
+```yaml
+kafka:
+  producer_interval_seconds: 15
+```
+
+## Quick Start
+
+From the repository root:
+
+```bash
+cd /home/ayaan/University/Big_Data_Analytics/Project/Real-time-crime-analytics
+```
+
+For another machine, replace that path with the local WSL repo path.
+
+Run the fast integrated test:
 
 ```bash
 make run-all-15pct
 ```
 
-Full project run:
+Run the full project:
 
 ```bash
 make run-all
 ```
 
-These targets start infrastructure, MongoDB indexes, Storm topology, Kafka producer, Spark batch processing, and Streamlit.
+These targets start infrastructure, MongoDB indexes, Storm topology, Kafka producer, Spark batch processing, and the Streamlit dashboard.
 
 Open:
 
@@ -144,7 +246,7 @@ Spark UI:  http://localhost:8081
 Storm UI:  http://localhost:8088
 ```
 
-## Component Runs
+## Component Commands
 
 Start shared services:
 
@@ -152,7 +254,7 @@ Start shared services:
 make up-detached
 ```
 
-Spark only:
+Run Spark only with the 15 percent test config:
 
 ```bash
 make spark-up
@@ -160,7 +262,7 @@ make spark-run-15pct
 make run-dashboard
 ```
 
-Full Spark run:
+Run Spark only with the full config:
 
 ```bash
 make spark-up
@@ -168,7 +270,7 @@ make spark-run
 make run-dashboard
 ```
 
-Streaming only:
+Run Kafka and Storm only:
 
 ```bash
 make up-detached
@@ -178,7 +280,7 @@ make run-producer
 make run-dashboard
 ```
 
-Direct scripts are also available. Prefer `make` for normal runs because it keeps the command sequence consistent:
+Direct scripts are also available, but the Makefile targets are preferred for normal runs:
 
 ```bash
 ./scripts/run_spark_batch.sh /app/config/config.yaml
@@ -197,84 +299,15 @@ make logs-storm
 make logs-dashboard
 ```
 
-Spark run logs are written under:
+Spark run logs are written to:
 
 ```text
 logs/spark/
 ```
 
-## Verification
+## Stop and Cleanup
 
-Batch status:
-
-```bash
-docker exec postgres psql -U crime_user -d crime_analytics -c "
-SELECT run_id, job_name, status, started_at, finished_at, message
-FROM batch_job_status
-ORDER BY created_at DESC
-LIMIT 5;
-"
-```
-
-Latest completed Spark output counts:
-
-```bash
-docker exec postgres psql -U crime_user -d crime_analytics -c "
-WITH latest AS (
-  SELECT run_id
-  FROM batch_job_status
-  WHERE status = 'completed'
-  ORDER BY finished_at DESC
-  LIMIT 1
-)
-SELECT 'crime_trends' AS table_name, COUNT(*) FROM crime_trends WHERE run_id = (SELECT run_id FROM latest)
-UNION ALL SELECT 'arrest_rates', COUNT(*) FROM arrest_rates WHERE run_id = (SELECT run_id FROM latest)
-UNION ALL SELECT 'violence_stats', COUNT(*) FROM violence_stats WHERE run_id = (SELECT run_id FROM latest)
-UNION ALL SELECT 'sex_offender_density', COUNT(*) FROM sex_offender_density WHERE run_id = (SELECT run_id FROM latest)
-UNION ALL SELECT 'hotspots', COUNT(*) FROM hotspots WHERE run_id = (SELECT run_id FROM latest)
-UNION ALL SELECT 'correlations', COUNT(*) FROM correlations WHERE run_id = (SELECT run_id FROM latest);
-"
-```
-
-Storm topology:
-
-```bash
-docker exec storm-nimbus storm list
-```
-
-Realtime PostgreSQL output:
-
-```bash
-docker exec postgres psql -U crime_user -d crime_analytics -c "
-SELECT district, window_start, window_end, event_count, updated_at
-FROM realtime_district_counts
-ORDER BY updated_at DESC
-LIMIT 10;
-"
-
-docker exec postgres psql -U crime_user -d crime_analytics -c "
-SELECT alert_id, district, alert_timestamp, event_count, threshold_value, severity
-FROM alerts
-ORDER BY alert_timestamp DESC
-LIMIT 10;
-"
-```
-
-MongoDB alert logs:
-
-```bash
-docker exec mongodb mongosh crime_analytics --quiet --eval "db.alert_logs.find().sort({timestamp:-1}).limit(5).toArray()"
-```
-
-Dashboard health:
-
-```bash
-curl -I http://localhost:8501
-```
-
-## Stop
-
-Stop containers and keep database volumes:
+Stop containers while keeping database volumes:
 
 ```bash
 make down
@@ -288,21 +321,22 @@ docker compose down -v
 
 `-v` deletes PostgreSQL and MongoDB stored results.
 
-## Implementation Rules
+## Implementation Notes
 
 - Spark uses explicit `StructType` schemas only.
-- `inferSchema=True` must not be used.
-- `district` is always a string; numeric districts are zero-padded, for example `001`.
-- Spark writes temp tables first, then publishes final tables after success.
+- `inferSchema=True` is not used.
+- `district` is standardized as a string across Spark, Kafka, Storm, PostgreSQL, and MongoDB.
+- Spark writes temporary staging tables first, then publishes final tables after success.
 - Dashboard reads only the latest completed Spark `run_id`.
-- Kafka and Storm do not run historical Spark analytics.
+- Kafka and Storm do not run historical analytics.
+- Raw MongoDB event logging is disabled by default to avoid uncontrolled storage growth.
+- The sex offender dataset does not provide a police district field, so district is derived where possible using matched crime-block evidence. Unmatched records are retained separately and are not ranked as a real district.
 
-## Documentation
 
-Detailed architecture, test commands, expected results, and troubleshooting notes are in:
+## Dataset Sources
 
-```text
-REPORT.md
-instructions.md
-TESTING.md
-```
+- Crime Data (2001-Present): [Chicago Data Portal](https://data.cityofchicago.org/Public-Safety/Crimes-2001-to-Present/ijzp-q8t2/about_data)
+- Police Stations: [Chicago Data Portal](https://data.cityofchicago.org/Public-Safety/Police-Stations/z8bn-74gv/about_data)
+- Arrests: [Chicago Data Portal](https://data.cityofchicago.org/Public-Safety/Arrests/dpt3-jri9/about_data)
+- Violence Reduction (Homicides and Non-Fatal Shootings): [Chicago Data Portal](https://data.cityofchicago.org/Public-Safety/Violence-Reduction-Victims-of-Homicides-and-Non-Fa/gumc-mgzr/about_data)
+- Sex Offenders: [Chicago Data Portal](https://data.cityofchicago.org/Public-Safety/Sex-Offenders/vc9r-bqvy/about_data)
