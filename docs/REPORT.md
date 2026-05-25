@@ -493,3 +493,5 @@ PostgreSQL realtime_district_counts: updating
 PostgreSQL alerts: populated when thresholds are crossed
 MongoDB alert_logs: populated
 ```
+
+This report was made in colaboration with Codex (GPT-5.5) and Github Copilot. Pls refer to prompt.txt for the propmts used.
